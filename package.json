@@ -1,0 +1,56 @@
+{
+  "name": "nextjs-base-starter",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbo -p 3008",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit",
+    "check-all": "npm run lint & npm run type-check & wait"
+  },
+  "dependencies": {
+    "@supabase/auth-helpers-nextjs": "^0.10.0",
+    "@supabase/auth-helpers-react": "^0.5.0",
+    "@supabase/ssr": "^0.6.1",
+    "@supabase/supabase-js": "^2.54.0",
+    "@tanstack/react-query": "^5.84.2",
+    "adm-zip": "^0.5.16",
+    "framer-motion": "^12.23.12",
+    "jszip": "^3.10.1",
+    "lucide-react": "^0.539.0",
+    "multer": "^2.0.2",
+    "next-connect": "^1.0.0",
+    "next-themes": "^0.4.6",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sharp": "^0.34.3",
+    "undici": "^7.13.0",
+    "webdav": "^5.8.0"
+  },
+  "devDependencies": {
+    "@types/multer": "^2.0.0",
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.23",
+    "next": "^15.4.6",
+    "postcss": "^8",
+    "supabase": "^2.22.12",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "supabase",
+      "unrs-resolver"
+    ],
+    "peerDependencyRules": {
+      "allowAny": [
+        "supabase"
+      ]
+    }
+  }
+}
