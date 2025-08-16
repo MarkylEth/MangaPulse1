@@ -10,6 +10,9 @@ import { useAuth } from '@/lib/auth/context'
 import type { Tables } from '@/database.types'
 import TeamPosts from '@/components/team/TeamPosts'
 import {
+  Users as UsersIcon,
+  ChevronDown,
+  ChevronUp,
   Check,
   Heart,
   UsersRound,
@@ -22,7 +25,6 @@ import {
   ExternalLink,
   BookOpen,
   TrendingUp,
-  Users,
   Award,
   MessageCircle,
   Share2,
@@ -52,10 +54,18 @@ type TeamTitle = {
 type EditValues = {
   name: string
   avatar_url: string
+  banner_url?: string | null
   bio: string
+  hiring_enabled: boolean
   hiring_text: string | null
+  discord_enabled: boolean
   discord_url: string | null
+  boosty_enabled: boolean
   boosty_url: string | null
+  telegram_enabled: boolean
+  telegram_url: string | null
+  vk_enabled: boolean
+  vk_url: string | null
   langs: string[]
   tags: string[]
   members: { username: string; role: string }[]
@@ -91,6 +101,60 @@ function mapTitleRow(row: any): TeamTitle {
   }
 }
 
+/* ========= collapsible text ========= */
+function AboutCollapser({
+  text,
+  theme,
+  collapsedHeight = 220,
+}: {
+  text: string
+  theme: 'light' | 'dark'
+  collapsedHeight?: number
+}) {
+  const [expanded, setExpanded] = React.useState(false)
+  const [overflow, setOverflow] = React.useState(false)
+  const ref = React.useRef<HTMLDivElement>(null)
+
+  React.useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const check = () => setOverflow(el.scrollHeight > collapsedHeight + 2)
+    check()
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [text, collapsedHeight])
+
+  return (
+    <div className="relative mb-6">
+      <div
+        ref={ref}
+        style={{ maxHeight: expanded ? undefined : collapsedHeight }}
+        className="overflow-hidden transition-[max-height] duration-300 ease-in-out"
+      >
+        <div className={`whitespace-pre-wrap text-[15px] leading-relaxed ${theme === 'light' ? 'text-slate-600' : 'text-slate-300'}`}>
+          {text}
+        </div>
+      </div>
+
+      {!expanded && overflow && (
+        <div className={`pointer-events-none absolute left-0 right-0 bottom-10 h-16 bg-gradient-to-b from-transparent ${theme === 'light' ? 'to-white' : 'to-slate-900'}`} />
+      )}
+
+      {overflow && (
+        <button
+          onClick={() => setExpanded(v => !v)}
+          className={`mt-3 inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm
+            ${theme === 'light' ? 'border-slate-300 hover:bg-slate-100 text-slate-700' : 'border-slate-600 hover:bg-slate-700/40 text-slate-200'}`}
+        >
+          {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          {expanded ? 'Свернуть' : 'Развернуть'}
+        </button>
+      )}
+    </div>
+  )
+}
+
 export default function TeamPage(): JSX.Element {
   const { theme } = useTheme()
   const { user, profile } = useAuth()
@@ -119,8 +183,7 @@ export default function TeamPage(): JSX.Element {
   const [showAllTags, setShowAllTags] = useState(false)
 
   // для всплывашки "Ссылка скопирована"
-const [copied, setCopied] = useState(false)
-
+  const [copied, setCopied] = useState(false)
 
   // ref для актуального состояния в обработчиках
   const teamRef = useRef<Team | null>(null)
@@ -132,38 +195,38 @@ const [copied, setCopied] = useState(false)
   const loadLockRef = useRef(false)
 
   // --- Лёгкий рефетч на фокус вкладки (без перезагрузки тайтлов) ---
-const lastFocusRefresh = useRef(0)
+  const lastFocusRefresh = useRef(0)
 
-const refreshOnFocus = async () => {
-  if (!team) return
-  const now = Date.now()
-  if (now - lastFocusRefresh.current < 60_000) return // не чаще раза в минуту
-  lastFocusRefresh.current = now
+  const refreshOnFocus = async () => {
+    if (!team) return
+    const now = Date.now()
+    if (now - lastFocusRefresh.current < 60_000) return // не чаще раза в минуту
+    lastFocusRefresh.current = now
 
-  try {
-    // подтянуть свежие счётчики команды (тайтлы не трогаем)
-    const { data: t2 } = await sb
-      .from('translator_teams')
-      .select('likes_count, followers_count, stats_pages, stats_inwork, updated_at')
-      .eq('id', team.id)
-      .single()
+    try {
+      // подтянуть свежие счётчики команды (тайтлы не трогаем)
+      const { data: t2 } = await sb
+        .from('translator_teams')
+        .select('likes_count, followers_count, stats_pages, stats_inwork, updated_at')
+        .eq('id', team.id)
+        .single()
 
-    if (t2) setTeam(prev => (prev ? { ...prev, ...t2 } as any : prev))
+      if (t2) setTeam(prev => (prev ? { ...prev, ...t2 } as any : prev))
 
-    // актуализируем статус подписки
-    if (user) {
-      const { data } = await sb
-        .from('team_followers')
-        .select('id')
-        .eq('team_id', team.id)
-        .eq('user_id', user.id)
-        .maybeSingle()
-      setIsFollowing(!!data)
+      // актуализируем статус подписки
+      if (user) {
+        const { data } = await sb
+          .from('team_followers')
+          .select('id')
+          .eq('team_id', team.id)
+          .eq('user_id', user.id)
+          .maybeSingle()
+        setIsFollowing(!!data)
+      }
+    } catch (e) {
+      console.warn('refreshOnFocus error', e)
     }
-  } catch (e) {
-    console.warn('refreshOnFocus error', e)
   }
-}
 
   // единый загрузчик данных команды (без привязки к user)
   const loadTeam = async (isFirst: boolean, withTitles: boolean = true) => {
@@ -190,7 +253,7 @@ const refreshOnFocus = async () => {
 
       setTeam(t)
 
-      // 2) Тайтлы
+      // 2) Тайтлы (если есть связь)
       try {
         if (withTitles) {
           if ((t as any).manga_id) {
@@ -199,15 +262,15 @@ const refreshOnFocus = async () => {
               .select('*')
               .eq('id', (t as any).manga_id)
               .single()
-          setTitles(manga ? [mapTitleRow(manga)] : [])
-        } else {
-          setTitles([])
+            setTitles(manga ? [mapTitleRow(manga)] : [])
+          } else {
+            setTitles([])
+          }
         }
+      } catch (e) {
+        console.error('Error loading manga:', e)
+        if (withTitles) setTitles([])
       }
-    } catch (e) {
-      console.error('Error loading manga:', e)
-      if (withTitles) setTitles([])
-    }
 
       // 3) Участники
       const { data: teamMembers } = await sb
@@ -215,7 +278,7 @@ const refreshOnFocus = async () => {
         .select('user_id, role, team_id, added_at')
         .eq('team_id', t.id)
 
-      const userIds = Array.from(new Set((teamMembers ?? []).map((m) => m.user_id)))
+      const userIds = Array.from(new Set((teamMembers ?? []).map(m => m.user_id)))
       if (userIds.length) {
         const { data: profs } = await sb
           .from('profiles')
@@ -238,7 +301,7 @@ const refreshOnFocus = async () => {
       setMembers([])
       setTitles([])
     } finally {
-      if (withTitles) setLoadingTitles(false)  // ← всегда закрываем спиннер
+      if (withTitles) setLoadingTitles(false)
       isFirst ? setInitialLoading(false) : setRefreshing(false)
       loadLockRef.current = false
     }
@@ -250,10 +313,8 @@ const refreshOnFocus = async () => {
       setInitialLoading(false)
       return
     }
-    // первичная загрузка с тайтлами
     void loadTeam(true, true)
-  
-    // при возврате во вкладку — лёгкий рефетч без тайтлов
+
     const onVis = () => {
       if (document.visibilityState === 'visible') {
         void refreshOnFocus()
@@ -262,7 +323,7 @@ const refreshOnFocus = async () => {
     document.addEventListener('visibilitychange', onVis)
     return () => document.removeEventListener('visibilitychange', onVis)
   }, [slug, sb, team?.id, user?.id])
-  
+
   // проверка подписки + актуализация счётчика после загрузки команды/появления user
   useEffect(() => {
     const checkFollow = async () => {
@@ -271,7 +332,6 @@ const refreshOnFocus = async () => {
         return
       }
 
-      // проверяем факт подписки
       const { data, error } = await sb
         .from('team_followers')
         .select('id')
@@ -286,7 +346,6 @@ const refreshOnFocus = async () => {
         setIsFollowing(!!data)
       }
 
-      // подтягиваем точный total подписчиков (если политика RLS разрешает head+count)
       const { count: total } = await sb
         .from('team_followers')
         .select('id', { count: 'exact', head: true })
@@ -300,7 +359,6 @@ const refreshOnFocus = async () => {
     void checkFollow()
   }, [user?.id, team?.id, sb])
 
-  // Подписаться/отписаться
   const toggleFollow = async () => {
     if (!user || !team) return
     try {
@@ -324,30 +382,27 @@ const refreshOnFocus = async () => {
       console.error('Error toggling follow:', error)
     }
   }
-  
-  // Копирование ссылки + мини-тост
-const copyLink = async () => {
-  try {
-    const url = window.location.href
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(url)
-    } else {
-      // fallback
-      const ta = document.createElement('textarea')
-      ta.value = url
-      document.body.appendChild(ta)
-      ta.select()
-      document.execCommand('copy')
-      document.body.removeChild(ta)
-    }
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  } catch (e) {
-    console.error('copy link failed', e)
-  }
-}
 
-  // Проверка прав доступа (учитываем profile.role + membership + created_by)
+  const copyLink = async () => {
+    try {
+      const url = window.location.href
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url)
+      } else {
+        const ta = document.createElement('textarea')
+        ta.value = url
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand('copy')
+        document.body.removeChild(ta)
+      }
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch (e) {
+      console.error('copy link failed', e)
+    }
+  }
+
   const canEdit = useMemo(() => {
     if (!user) return false
 
@@ -389,7 +444,6 @@ const copyLink = async () => {
     )
   }
 
-  // скелетон только при самом первом рендере
   if (initialLoading) {
     return (
       <div className={`min-h-screen ${bgClass}`}>
@@ -435,25 +489,21 @@ const copyLink = async () => {
     )
   }
 
-  const sinceText = team.started_at ? `с ${new Date(team.started_at).getFullYear()}` : ''
   const resources = (
     [
-      team.discord_url && { key: 'Discord', href: team.discord_url, icon: '#', color: 'bg-[#7289da]' },
-      team.boosty_url && { key: 'Boosty', href: team.boosty_url, icon: 'B', color: 'bg-[#ff6b35]' }
+      (team as any).discord_url && { key: 'Discord', href: (team as any).discord_url as string, icon: 'D', color: 'bg-[#7289da]' },
+      (team as any).boosty_url && { key: 'Boosty', href: (team as any).boosty_url as string, icon: 'B', color: 'bg-[#ff6b35]' },
+      (team as any).telegram_url && { key: 'Telegram', href: (team as any).telegram_url as string, icon: 'TG', color: 'bg-[#2AABEE]' },
+      (team as any).vk_url && { key: 'VK', href: (team as any).vk_url as string, icon: 'VK', color: 'bg-[#0077FF]' }
     ].filter(Boolean) as { key: string; href: string; icon: string; color: string }[]
   )
-
-  const displayMembers = showAllMembers ? members : members.slice(0, 12)
-  const displayTags = showAllTags ? (team.tags || []) : (team.tags || []).slice(0, 6)
 
   return (
     <div className={`min-h-screen ${bgClass}`}>
       <Header showSearch={false} />
 
-      {/* тонкая полоска фонового рефетча */}
       {refreshing && <div className="fixed left-0 top-0 h-0.5 w-full bg-blue-500/70" />}
 
-      {/* Breadcrumb */}
       <div className="mx-auto max-w-6xl px-5 pt-6">
         <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-2 text-sm">
           <span className={`uppercase tracking-wide ${mutedTextClass}`}>Команды переводчиков</span>
@@ -463,150 +513,155 @@ const copyLink = async () => {
       </div>
 
       <div className="mx-auto max-w-6xl px-5 py-6">
-{/* Шапка профиля */}
-<motion.div
-  initial={{ opacity: 0, y: 20 }}
-  animate={{ opacity: 1, y: 0 }}
-  className={`mb-6 rounded-2xl border shadow-sm ${cardBgClass} overflow-hidden`}
->
-  {/* Баннер — выше */}
-  <div className="h-64 sm:h-72 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 relative">
-    <div className="absolute inset-0 bg-black/20" />
-  </div>
-
-  {/* Тёмная полоса под баннером */}
-  <div className="bg-slate-900 text-white">
-    <div className="px-6 py-5">
-      <div className="flex items-start justify-between gap-6">
-        {/* Левая часть: аватар + текст */}
-        <div className="flex items-center gap-6 min-w-0">
-          {/* Аватар чуть заезжает на баннер */}
-          <motion.div
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ delay: 0.2 }}
-            className="-mt-16 relative"
-          >
-            <div className="relative h-[120px] w-[120px] overflow-hidden rounded-2xl bg-white ring-4 ring-white shadow-xl">
-              {team.avatar_url ? (
-                <img src={team.avatar_url} alt="avatar" className="h-full w-full object-cover" />
-              ) : (
-                <div className="grid h-full w-full place-items-center text-4xl bg-gradient-to-br from-blue-400 to-purple-600 text-white">
-                  🦊
-                </div>
-              )}
-            </div>
-            {(team as any).verified && (
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: 0.4, type: 'spring' }}
-                className="absolute -bottom-2 -right-2 flex h-8 w-8 items-center justify-center rounded-full bg-[#4285f4] text-white shadow-lg"
-              >
-                <Check className="h-4 w-4" />
-              </motion.div>
+        {/* Шапка профиля */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={`mb-6 rounded-2xl border shadow-sm ${cardBgClass} overflow-hidden`}
+        >
+          {/* Баннер */}
+          <div className="h-64 sm:h-72 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 relative">
+            {(team as any).banner_url && (
+              <img
+                src={(team as any).banner_url as string}
+                alt="banner"
+                className="absolute inset-0 h-full w-full object-cover opacity-80"
+              />
             )}
-          </motion.div>
+            <div className="absolute inset-0 bg-black/20" />
+          </div>
 
-          {/* Название / ник / счётчики — на тёмной полосе */}
-          <div className="min-w-0">
-            <div className="mb-1 flex items-center gap-3">
-              <h1 className="text-3xl font-bold truncate text-white">{team.name}</h1>
-            </div>
-            <div className="mb-3 text-[16px] text-slate-300">@{team.slug ?? team.id}</div>
+          {/* Тёмная полоса под баннером */}
+          <div className="bg-slate-900 text-white">
+            <div className="px-6 py-5">
+              <div className="flex items-start justify-between gap-6">
+                {/* Левая часть */}
+                <div className="flex items-center gap-6 min-w-0">
+                  <motion.div
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ delay: 0.2 }}
+                    className="-mt-16 relative"
+                  >
+                    <div className="relative h-[120px] w-[120px] overflow-hidden rounded-2xl bg-white ring-4 ring-white shadow-xl">
+                      {team.avatar_url ? (
+                        <img src={team.avatar_url} alt="avatar" className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="grid h-full w-full place-items-center text-4xl bg-gradient-to-br from-blue-400 to-purple-600 text-white">
+                          🦊
+                        </div>
+                      )}
+                    </div>
+                    {(team as any).verified && (
+                      <motion.div
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ delay: 0.4, type: 'spring' }}
+                        className="absolute -bottom-2 -right-2 flex h-8 w-8 items-center justify-center rounded-full bg-[#4285f4] text-white shadow-lg"
+                      >
+                        <Check className="h-4 w-4" />
+                      </motion.div>
+                    )}
+                  </motion.div>
 
-            <div className="flex flex-wrap items-center gap-6 text-[15px]">
-              <div className="flex items-center gap-2">
-                <Heart className="h-4 w-4 text-slate-400" />
-                <span className="font-semibold text-white">
-                  {formatK((team as any).likes_count ?? 0)}
-                </span>
-                <span className="text-slate-400">лайков</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <UsersRound className="h-4 w-4 text-slate-400" />
-                <span className="font-semibold text-white">
-                  {formatK((team as any).followers_count ?? 0)}
-                </span>
-                <span className="text-slate-400">подписчиков</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <BookOpen className="h-4 w-4 text-slate-400" />
-                <span className="font-semibold text-white">{titles.length}</span>
-                <span className="text-slate-400">тайтлов</span>
-              </div>
-              {team.started_at && (
-                <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-slate-400" />
-                  <span className="text-slate-300">
-                    с {new Date(team.started_at).getFullYear()}
-                  </span>
+                  {/* Название / ник / счётчики */}
+                  <div className="min-w-0">
+                    <div className="mb-1 flex items-center gap-3">
+                      <h1 className="text-3xl font-bold truncate text-white">{team.name}</h1>
+                    </div>
+                    <div className="mb-3 text-[16px] text-slate-300">@{team.slug ?? team.id}</div>
+
+                    <div className="flex flex-wrap items-center gap-6 text-[15px]">
+                      <div className="flex items-center gap-2">
+                        <Heart className="h-4 w-4 text-slate-400" />
+                        <span className="font-semibold text-white">
+                          {formatK((team as any).likes_count ?? 0)}
+                        </span>
+                        <span className="text-slate-400">лайков</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <UsersRound className="h-4 w-4 text-slate-400" />
+                        <span className="font-semibold text-white">
+                          {formatK((team as any).followers_count ?? 0)}
+                        </span>
+                        <span className="text-slate-400">подписчиков</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <BookOpen className="h-4 w-4 text-slate-400" />
+                        <span className="font-semibold text-white">{titles.length}</span>
+                        <span className="text-slate-400">тайтлов</span>
+                      </div>
+                      {team.started_at && (
+                        <div className="flex items-center gap-2">
+                          <Calendar className="h-4 w-4 text-slate-400" />
+                          <span className="text-slate-300">
+                            с {new Date(team.started_at).getFullYear()}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              )}
+
+                {/* Правая часть */}
+                <div className="flex shrink-0 items-center gap-3 relative">
+                  {user && (
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={toggleFollow}
+                      className={`px-6 py-3 rounded-xl font-medium transition-all shadow-lg ${
+                        isFollowing
+                          ? 'bg-slate-800 text-white border-2 border-slate-700 hover:bg-slate-700'
+                          : 'bg-[#2196F3] text-white hover:bg-[#1976D2] border-2 border-transparent'
+                      }`}
+                    >
+                      {isFollowing ? '✓ Подписан' : 'Подписаться'}
+                    </motion.button>
+                  )}
+
+                  {/* Поделиться */}
+                  <div className="relative">
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={copyLink}
+                      className="p-3 rounded-xl border-2 border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 shadow-sm"
+                      title="Скопировать ссылку"
+                    >
+                      <Share2 className="h-4 w-4" />
+                    </motion.button>
+
+                    <AnimatePresence>
+                      {copied && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 8 }}
+                          className="absolute right-0 -top-10 whitespace-nowrap rounded-lg bg-slate-900 text-white text-xs px-3 py-1 shadow-lg"
+                        >
+                          Ссылка скопирована
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
+                  {user && canEdit && (
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => setIsEditOpen(true)}
+                      className="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 shadow-sm"
+                    >
+                      <Edit className="h-4 w-4" />
+                      Редактировать
+                    </motion.button>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-
-        {/* Правая часть: кнопки + тост "Ссылка скопирована" */}
-        <div className="flex shrink-0 items-center gap-3 relative">
-          {user && (
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={toggleFollow}
-              className={`px-6 py-3 rounded-xl font-medium transition-all shadow-lg ${
-                isFollowing
-                  ? 'bg-slate-800 text-white border-2 border-slate-700 hover:bg-slate-700'
-                  : 'bg-[#2196F3] text-white hover:bg-[#1976D2] border-2 border-transparent'
-              }`}
-            >
-              {isFollowing ? '✓ Подписан' : 'Подписаться'}
-            </motion.button>
-          )}
-
-          {/* Поделиться: копируем ссылку */}
-          <div className="relative">
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={copyLink}
-              className="p-3 rounded-xl border-2 border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 shadow-sm"
-              title="Скопировать ссылку"
-            >
-              <Share2 className="h-4 w-4" />
-            </motion.button>
-
-            {/* Тост "Ссылка скопирована" */}
-            <AnimatePresence>
-              {copied && (
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 8 }}
-                  className="absolute right-0 -top-10 whitespace-nowrap rounded-lg bg-slate-900 text-white text-xs px-3 py-1 shadow-lg"
-                >
-                  Ссылка скопирована
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {user && canEdit && (
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setIsEditOpen(true)}
-              className="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700 shadow-sm"
-            >
-              <Edit className="h-4 w-4" />
-              Редактировать
-            </motion.button>
-          )}
-        </div>
-      </div>
-    </div>
-  </div>
-</motion.div>
+        </motion.div>
 
         {/* Табы */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }} className={`mb-6 rounded-2xl border ${cardBgClass} overflow-hidden`}>
@@ -637,14 +692,14 @@ const copyLink = async () => {
               {/* Левая колонка */}
               <div className="space-y-6">
                 <Section>
-                  <SectionTitle icon={<Users className="w-5 h-5" />}>О команде</SectionTitle>
-                  <p className="mb-6 whitespace-pre-wrap text-[15px] leading-relaxed text-slate-600 dark:text-slate-300">
-                    {team.bio || 'Команда переводчиков манги на платформе MangaPulse. Мы работаем над качественными переводами для русскоязычных читателей.'}
-                  </p>
+                  <SectionTitle icon={<UsersIcon className="w-5 h-5" />}>О команде</SectionTitle>
+                  {team.bio?.trim() && (
+                    <AboutCollapser text={team.bio} theme={theme} collapsedHeight={220} />
+                  )}
 
                   <SectionTitle>Что переводят</SectionTitle>
                   <div className="mb-4 flex flex-wrap gap-2">
-                    {displayTags.map((t, i) => (
+                    {(showAllTags ? (team.tags || []) : (team.tags || []).slice(0, 6)).map((t, i) => (
                       <motion.span
                         key={`tag-${i}`}
                         initial={{ opacity: 0, scale: 0.8 }}
@@ -673,8 +728,9 @@ const copyLink = async () => {
                     )}
                   </div>
 
+                  <SectionTitle className="mt-2">Направления перевода</SectionTitle>
                   <div className="mb-4 flex flex-wrap gap-2">
-                    {(team.langs?.length ? team.langs : ['RU→EN']).map((t, i) => (
+                    {(team.langs?.length ? Array.from(new Set(team.langs)) : ['EN→RU']).map((lng, i) => (
                       <motion.span
                         key={`lang-${i}`}
                         initial={{ opacity: 0, scale: 0.8 }}
@@ -686,7 +742,7 @@ const copyLink = async () => {
                             : 'bg-blue-600/20 text-blue-400 border border-blue-600/30'
                         }`}
                       >
-                        {t}
+                        {lng}
                       </motion.span>
                     ))}
                   </div>
@@ -746,13 +802,13 @@ const copyLink = async () => {
                   {/* Участники команды */}
                   <div>
                     <div className="mb-4 flex items-center justify-between">
-                      <SectionTitle className="!mb-0" icon={<Users className="w-5 h-5" />}>
+                      <SectionTitle className="!mb-0" icon={<UsersIcon className="w-5 h-5" />}>
                         Команда ({members.length})
                       </SectionTitle>
                     </div>
 
                     <div className="grid grid-cols-4 gap-3">
-                      {displayMembers.map((m, idx) => (
+                      {(showAllMembers ? members : members.slice(0, 12)).map((m, idx) => (
                         <motion.div
                           key={idx}
                           initial={{ opacity: 0, scale: 0.8 }}
@@ -801,7 +857,7 @@ const copyLink = async () => {
               {/* Правая колонка */}
               <div className="space-y-6">
                 <Section>
-                  <SectionTitle icon={<Award className="w-5 h-5" />}>Топ участников</SectionTitle>
+                  <SectionTitle icon={<Award className="w-5 h-5" />}>Топ подписчиков</SectionTitle>
                   <div className="space-y-3">
                     {members.slice(0, 5).map((m, i) => (
                       <motion.div
@@ -845,7 +901,7 @@ const copyLink = async () => {
                 </Section>
 
                 {/* Блок найма */}
-                {((team as any).hiring_text || 'Нужен тайлсеттер') && (
+                {((team as any).hiring_text || (team as any).hiring_enabled === false) && (
                   <Section>
                     <motion.div
                       initial={{ opacity: 0, scale: 0.95 }}
@@ -854,13 +910,28 @@ const copyLink = async () => {
                         theme === 'light' ? 'border-amber-200 bg-amber-50' : 'border-amber-600/30 bg-amber-600/10'
                       }`}
                     >
-                      <h4 className={`mb-2 font-semibold flex items-center gap-2 ${theme === 'light' ? 'text-amber-800' : 'text-amber-400'}`}>
-                        <Users className="w-4 h-4" />
-                        Мы ищем таланты!
-                      </h4>
-                      <p className={`text-[14px] ${theme === 'light' ? 'text-amber-700' : 'text-amber-300'}`}>
-                        {(team as any).hiring_text ?? 'Нужен тайлсеттер'}
-                      </p>
+                      {(team as any).hiring_enabled === false ? (
+                        <>
+                          <h4 className={`mb-2 font-semibold flex items-center gap-2 ${theme === 'light' ? 'text-amber-800' : 'text-amber-400'}`}>
+                            <UsersIcon className="w-4 h-4" />
+                            Команда укомплектована
+                          </h4>
+                          <p className={`text-[14px] ${theme === 'light' ? 'text-amber-700' : 'text-amber-300'}`}>
+                            Сейчас набор закрыт.
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <h4 className={`mb-2 font-semibold flex items-center gap-2 ${theme === 'light' ? 'text-amber-800' : 'text-amber-400'}`}>
+                            <UsersIcon className="w-4 h-4" />
+                            Мы ищем таланты!
+                          </h4>
+                          <p className={`text-[14px] ${theme === 'light' ? 'text-amber-700' : 'text-amber-300'}`}>
+                            {(team as any).hiring_text ?? 'Нужен тайлсеттер'}
+                          </p>
+                        </>
+                      )}
+
                       <motion.button
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
@@ -869,6 +940,7 @@ const copyLink = async () => {
                             ? 'bg-amber-200 text-amber-800 hover:bg-amber-300'
                             : 'bg-amber-600/20 text-amber-300 border border-amber-600/30 hover:bg-amber-600/30'
                         }`}
+                        onClick={() => {}}
                       >
                         Связаться с командой
                       </motion.button>
@@ -981,11 +1053,10 @@ const copyLink = async () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.3 }}
             >
               <TeamPosts
-                teamId={team.id as number} // писать посты: только лидер/owner/админ
-                canPost={( () => {
+                teamId={team.id as number}
+                canPost={(() => {
                   const membership = members.find(m => m.user_id === user?.id)
                   const isLead = ['lead','leader','owner'].includes(String(membership?.role))
                   const isAdmin = ['admin','moderator'].includes(String(profile?.role))
@@ -1003,12 +1074,20 @@ const copyLink = async () => {
           initial={{
             name: team.name ?? '',
             avatar_url: team.avatar_url ?? '',
+            banner_url: (team as any).banner_url ?? null,
             bio: team.bio ?? '',
-            hiring_text: (team as unknown as { hiring_text?: string }).hiring_text ?? '',
-            discord_url: team.discord_url ?? null,
-            boosty_url: team.boosty_url ?? null,
-            langs: team.langs ?? ['RU→EN'],
-            tags: team.tags ?? ['Манга', 'Игры', 'Дорамы'],
+            hiring_enabled: (team as any).hiring_enabled ?? !!(team as any).hiring_text,
+            hiring_text: (team as any).hiring_text ?? null,
+            discord_enabled: !!(team as any).discord_url,
+            discord_url: (team as any).discord_url ?? null,
+            boosty_enabled: !!(team as any).boosty_url,
+            boosty_url: (team as any).boosty_url ?? null,
+            telegram_enabled: !!(team as any).telegram_url,
+            telegram_url: (team as any).telegram_url ?? null,
+            vk_enabled: !!(team as any).vk_url,
+            vk_url: (team as any).vk_url ?? null,
+            langs: team.langs ?? ['EN→RU'],
+            tags: team.tags ?? ['Манга', 'Новеллы', 'Другое'],
             members: members.map((m) => ({
               username: m.profile?.username ?? '',
               role: m.role ?? 'member'
@@ -1017,72 +1096,84 @@ const copyLink = async () => {
           onClose={() => setIsEditOpen(false)}
           onSave={async (v) => {
             try {
+              const payload: any = {
+                name: v.name.trim(),
+                avatar_url: v.avatar_url.trim(),
+                banner_url: v.banner_url?.trim() || null,
+                bio: v.bio,
+                discord_url: v.discord_enabled ? (v.discord_url?.trim() || null) : null,
+                boosty_url: v.boosty_enabled ? (v.boosty_url?.trim() || null) : null,
+                telegram_url: v.telegram_enabled ? (v.telegram_url?.trim() || null) : null,
+                vk_url: v.vk_enabled ? (v.vk_url?.trim() || null) : null,
+                langs: v.langs,
+                tags: v.tags,
+                hiring_text: v.hiring_enabled ? (v.hiring_text?.trim() || null) : null,
+                hiring_enabled: v.hiring_enabled
+              }
+
               const { error: upErr } = await sb
                 .from('translator_teams')
-                .update({
-                  name: v.name.trim(),
-                  avatar_url: v.avatar_url.trim(),
-                  bio: v.bio,
-                  discord_url: v.discord_url || null,
-                  boosty_url: v.boosty_url || null,
-                  langs: v.langs,
-                  tags: v.tags,
-                  hiring_text: v.hiring_text?.trim() || null
-                })
+                .update(payload)
                 .eq('id', (team as any).id)
               if (upErr) throw new Error(upErr.message)
 
-              const usernames = Array.from(new Set(v.members.map((m) => m.username.trim()).filter((u) => u.length > 0)))
-              const { data: profs, error: profErr } = await sb.from('profiles').select('id, username').in('username', usernames)
-              if (profErr) throw new Error(profErr.message)
-
-              const idByUsername = new Map((profs ?? []).map((p) => [p.username, p.id]))
-              const desiredIds = new Set(
-                v.members.map((m) => idByUsername.get(m.username.trim())).filter((id): id is string => !!id)
+              // --- members sync ---
+              const usernames = Array.from(
+                new Set(v.members.map(m => m.username.trim()).filter(u => u.length > 0))
               )
 
-              const currentIds = new Set(members.map((m) => m.user_id))
-              const toDeleteIds = [...currentIds].filter((id) => !desiredIds.has(id))
+              let profs: Pick<Profile, 'id' | 'username'>[] = []
+              if (usernames.length) {
+                const { data, error } = await sb
+                  .from('profiles')
+                  .select('id, username')
+                  .in('username', usernames)
+                if (error) throw new Error(error.message)
+                profs = data ?? []
+              }
+
+              // Map username(string) -> id, пропуская null/пустые
+              const idByUsername = new Map<string, string>(
+                profs
+                  .filter((p): p is { id: string; username: string } => !!p.username && p.username.trim().length > 0)
+                  .map(p => [p.username, p.id])
+              )
+
+              const desiredIds = new Set(
+                v.members
+                  .map(m => idByUsername.get(m.username.trim()))
+                  .filter((id): id is string => !!id)
+              )
+
+              const currentIds = new Set(members.map(m => m.user_id))
+              const toDeleteIds = [...currentIds].filter(id => !desiredIds.has(id))
               const teamKey: any = (team as any).id
 
               const toUpsert = v.members
-                .map((m) => {
+                .map(m => {
                   const uid = idByUsername.get(m.username.trim())
-                  return uid
-                    ? {
-                        team_id: teamKey,
-                        user_id: uid,
-                        role: m.role ?? 'member'
-                      }
-                    : null
+                  return uid ? { team_id: teamKey, user_id: uid, role: m.role ?? 'member' } : null
                 })
                 .filter(Boolean) as any[]
 
               if (toDeleteIds.length) {
-                const { error: delErr } = await sb.from('translator_team_members').delete().in('user_id', toDeleteIds).eq('team_id', teamKey)
+                const { error: delErr } = await sb
+                  .from('translator_team_members')
+                  .delete()
+                  .in('user_id', toDeleteIds)
+                  .eq('team_id', teamKey)
                 if (delErr) throw new Error(delErr.message)
               }
 
               if (toUpsert.length) {
-                const { error: upsertErr } = await sb.from('translator_team_members').upsert(toUpsert, { onConflict: 'team_id,user_id' })
+                const { error: upsertErr } = await sb
+                  .from('translator_team_members')
+                  .upsert(toUpsert, { onConflict: 'team_id,user_id' })
                 if (upsertErr) throw new Error(upsertErr.message)
               }
 
-              setTeam((t) =>
-                t
-                  ? {
-                      ...t,
-                      name: v.name.trim(),
-                      avatar_url: v.avatar_url.trim(),
-                      bio: v.bio,
-                      discord_url: v.discord_url || null,
-                      boosty_url: v.boosty_url || null,
-                      langs: v.langs,
-                      tags: v.tags,
-                      ...(v.hiring_text !== undefined ? { hiring_text: v.hiring_text } : {})
-                    }
-                  : t
-              )
+              // локально обновим
+              setTeam(t => (t ? { ...t, ...payload } : t))
 
               const { data: teamMembersNew, error: memErr } = await sb
                 .from('translator_team_members')
@@ -1090,18 +1181,25 @@ const copyLink = async () => {
                 .eq('team_id', teamKey)
               if (memErr) throw new Error(memErr.message)
 
-              if (teamMembersNew) {
-                const userIds = Array.from(new Set(teamMembersNew.map((m) => m.user_id)))
-                const { data: profs2, error: profErr2 } = await sb.from('profiles').select('id, username, avatar_url').in('id', userIds)
-                if (profErr2) throw new Error(profErr2.message)
-
-                setMembers(
-                  teamMembersNew.map((m) => ({
-                    ...(m as TeamMember),
-                    profile: (profs2 ?? []).find((p) => p.id === m.user_id) ?? null
-                  }))
-                )
+              let profs2: Pick<Profile, 'id' | 'username' | 'avatar_url'>[] = []
+              if (teamMembersNew && teamMembersNew.length) {
+                const userIds = Array.from(new Set(teamMembersNew.map(m => m.user_id)))
+                if (userIds.length) {
+                  const { data: p2, error: e2 } = await sb
+                    .from('profiles')
+                    .select('id, username, avatar_url')
+                    .in('id', userIds)
+                  if (e2) throw new Error(e2.message)
+                  profs2 = p2 ?? []
+                }
               }
+
+              setMembers(
+                (teamMembersNew ?? []).map(m => ({
+                  ...(m as TeamMember),
+                  profile: profs2.find(p => p.id === m.user_id) ?? null
+                }))
+              )
 
               setIsEditOpen(false)
             } catch (e) {
@@ -1160,6 +1258,44 @@ const EditModal: React.FC<EditModalProps> = ({ initial, onClose, onSave }) => {
       ? 'bg-white border-slate-200 text-gray-900 focus:ring-blue-500'
       : 'bg-slate-700 border-slate-600 text-white focus:ring-blue-500'
 
+  const Label: React.FC<{children: React.ReactNode}> = ({ children }) => (
+    <label className={`mb-1 block text-xs font-medium uppercase tracking-wide ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>{children}</label>
+  )
+
+  const Toggle: React.FC<{checked: boolean; onChange: (v:boolean)=>void}> = ({ checked, onChange }) => (
+    <button
+      type="button"
+      aria-pressed={checked}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-7 w-14 items-center rounded-full transition ${checked ? 'bg-blue-600' : 'bg-slate-600'}`}
+    >
+      <span className={`inline-block h-6 w-6 transform rounded-full bg-white shadow transition ${checked ? 'translate-x-7' : 'translate-x-1'}`} />
+    </button>
+  )
+
+  const UrlField: React.FC<{
+    label: string
+    enabled: boolean
+    value: string | null
+    placeholder: string
+    onToggle: (v:boolean)=>void
+    onChange: (v:string)=>void
+  }> = ({ label, enabled, value, placeholder, onToggle, onChange }) => (
+    <div>
+      <div className="mb-1 flex items-center justify-between">
+        <Label>{label}</Label>
+        <Toggle checked={enabled} onChange={onToggle} />
+      </div>
+      <input
+        className={`w-full rounded-2xl border px-3 py-2.5 text-[14px] shadow-sm outline-none transition focus:ring-4 ${inputClass}`}
+        value={value ?? ''}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        disabled={!enabled}
+      />
+    </div>
+  )
+
   return (
     <AnimatePresence>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -1189,7 +1325,7 @@ const EditModal: React.FC<EditModalProps> = ({ initial, onClose, onSave }) => {
           <form className="max-h-[calc(90vh-80px)] space-y-6 overflow-y-auto px-6 py-6" onSubmit={submit}>
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="sm:col-span-2">
-                <label className={`mb-1 block text-xs font-medium uppercase tracking-wide ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>Название команды</label>
+                <Label>Название команды</Label>
                 <input
                   className={`w-full rounded-2xl border px-3 py-2.5 text-[14px] shadow-sm outline-none transition focus:ring-4 focus:ring-sky-200/60 ${inputClass}`}
                   value={v.name}
@@ -1199,7 +1335,7 @@ const EditModal: React.FC<EditModalProps> = ({ initial, onClose, onSave }) => {
               </div>
 
               <div className="sm:col-span-2">
-                <label className={`mb-1 block text-xs font-medium uppercase tracking-wide ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>Аватар (URL)</label>
+                <Label>Аватар (URL)</Label>
                 <input
                   className={`w-full rounded-2xl border px-3 py-2.5 text-[14px] shadow-sm outline-none transition focus:ring-4 focus:ring-sky-200/60 ${inputClass}`}
                   value={v.avatar_url}
@@ -1209,7 +1345,17 @@ const EditModal: React.FC<EditModalProps> = ({ initial, onClose, onSave }) => {
               </div>
 
               <div className="sm:col-span-2">
-                <label className={`mb-1 block text-xs font-medium uppercase tracking-wide ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>Описание</label>
+                <Label>Баннер (URL)</Label>
+                <input
+                  className={`w-full rounded-2xl border px-3 py-2.5 text-[14px] shadow-sm outline-none transition focus:ring-4 focus:ring-sky-200/60 ${inputClass}`}
+                  value={v.banner_url ?? ''}
+                  onChange={(e) => setV({ ...v, banner_url: e.target.value })}
+                  placeholder="https://..."
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <Label>Описание</Label>
                 <textarea
                   className={`h-28 w-full resize-y rounded-2xl border px-3 py-2.5 text-[14px] shadow-sm outline-none transition focus:ring-4 focus:ring-sky-200/60 ${inputClass}`}
                   value={v.bio}
@@ -1218,40 +1364,58 @@ const EditModal: React.FC<EditModalProps> = ({ initial, onClose, onSave }) => {
               </div>
 
               <div className="sm:col-span-2">
-                <label className={`mb-1 block text-xs font-medium uppercase tracking-wide ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>Мы ищем (плашка)</label>
+                <div className="mb-1 flex items-center justify-between">
+                  <Label>Мы ищем (плашка)</Label>
+                  <Toggle checked={v.hiring_enabled} onChange={(val)=> setV(prev=>({ ...prev, hiring_enabled: val }))} />
+                </div>
                 <input
                   className={`w-full rounded-2xl border px-3 py-2.5 text-[14px] shadow-sm outline-none transition focus:ring-4 focus:ring-amber-200/70 ${inputClass}`}
                   value={v.hiring_text ?? ''}
                   onChange={(e) => setV({ ...v, hiring_text: e.target.value })}
                   placeholder="Нужен тайлсеттер"
+                  disabled={!v.hiring_enabled}
                 />
               </div>
 
-              <div>
-                <label className={`mb-1 block text-xs font-medium uppercase tracking-wide ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>Discord URL</label>
-                <input
-                  className={`w-full rounded-2xl border px-3 py-2.5 text-[14px] shadow-sm outline-none transition focus:ring-4 focus:ring-sky-200/60 ${inputClass}`}
-                  value={v.discord_url ?? ''}
-                  onChange={(e) => setV({ ...v, discord_url: e.target.value })}
-                  placeholder="https://discord.gg/..."
-                />
-              </div>
-              <div>
-                <label className={`mb-1 block text-xs font-medium uppercase tracking-wide ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>Boosty URL</label>
-                <input
-                  className={`w-full rounded-2xl border px-3 py-2.5 text-[14px] shadow-sm outline-none transition focus:ring-4 focus:ring-sky-200/60 ${inputClass}`}
-                  value={v.boosty_url ?? ''}
-                  onChange={(e) => setV({ ...v, boosty_url: e.target.value })}
-                  placeholder="https://boosty.to/..."
-                />
-              </div>
+              <UrlField
+                label="Discord URL"
+                enabled={v.discord_enabled}
+                value={v.discord_url}
+                placeholder="https://discord.gg/..."
+                onToggle={(val)=> setV(prev=>({ ...prev, discord_enabled: val }))}
+                onChange={(val)=> setV(prev=>({ ...prev, discord_url: val }))}
+              />
+              <UrlField
+                label="Boosty URL"
+                enabled={v.boosty_enabled}
+                value={v.boosty_url}
+                placeholder="https://boosty.to/..."
+                onToggle={(val)=> setV(prev=>({ ...prev, boosty_enabled: val }))}
+                onChange={(val)=> setV(prev=>({ ...prev, boosty_url: val }))}
+              />
+              <UrlField
+                label="Telegram URL"
+                enabled={v.telegram_enabled}
+                value={v.telegram_url}
+                placeholder="https://t.me/..."
+                onToggle={(val) => setV(prev => ({ ...prev, telegram_enabled: val }))} 
+                onChange={(val) => setV(prev => ({ ...prev, telegram_url: val }))} 
+              />
+              <UrlField
+                label="VK URL"
+                enabled={v.vk_enabled}
+                value={v.vk_url}
+                placeholder="https://vk.com/..."
+                onToggle={(val) => setV(prev => ({ ...prev, vk_enabled: val }))} 
+                onChange={(val) => setV(prev => ({ ...prev, vk_url: val }))} 
+              />
             </div>
 
             <div className="grid gap-5 sm:grid-cols-2">
               <div>
                 <div className={`mb-2 text-xs font-medium uppercase tracking-wide ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>Что переводят (теги)</div>
                 <div className="flex flex-wrap gap-2">
-                  {['Игры', 'Манга', 'Дорамы', 'Новеллы', 'Комиксы'].map((t) => (
+                  {['Манга', 'Новеллы', 'Другое'].map((t) => (
                     <motion.button
                       key={t}
                       type="button"
@@ -1276,7 +1440,7 @@ const EditModal: React.FC<EditModalProps> = ({ initial, onClose, onSave }) => {
               <div>
                 <div className={`mb-2 text-xs font-medium uppercase tracking-wide ${theme === 'light' ? 'text-slate-500' : 'text-slate-400'}`}>Направления перевода</div>
                 <div className="flex flex-wrap gap-2">
-                  {['RU→EN', 'EN→RU', 'JP→RU', 'KR→RU'].map((lng) => (
+                  {['EN→RU', 'JP→RU', 'KR→RU'].map((lng) => (
                     <motion.button
                       key={lng}
                       type="button"
@@ -1304,19 +1468,19 @@ const EditModal: React.FC<EditModalProps> = ({ initial, onClose, onSave }) => {
                 {v.members.map((m, idx) => (
                   <motion.div key={idx} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="grid gap-2 sm:grid-cols-12">
                     <input
-                      className={`sm:col-span-7 rounded-xl border px-3 py-2 text-[14px] shadow-sm outline-none transition focus:ring-4 focus:ring-sky-200/60 ${inputClass}`}
+                      className={`sm:col-span-7 rounded-2xl border px-3 py-2 text-[14px] shadow-sm outline-none transition focus:ring-4 focus:ring-sky-200/60 ${inputClass}`}
                       placeholder="username"
                       value={m.username}
                       onChange={(e) => {
                         const val = e.target.value
-                        setV((prev) => ({
+                        setV(prev => ({
                           ...prev,
                           members: prev.members.map((mm, i) => (i === idx ? { ...mm, username: val } : mm))
                         }))
                       }}
                     />
                     <select
-                      className={`sm:col-span-4 rounded-xl border px-3 py-2 text-[14px] shadow-sm outline-none transition focus:ring-4 focus:ring-sky-200/60 ${inputClass}`}
+                      className={`sm:col-span-4 rounded-2xl border px-3 py-2 text-[14px] shadow-sm outline-none transition focus:ring-4 focus:ring-sky-200/60 ${inputClass}`}
                       value={m.role}
                       onChange={(e) => {
                         const val = e.target.value
@@ -1336,7 +1500,7 @@ const EditModal: React.FC<EditModalProps> = ({ initial, onClose, onSave }) => {
                       type="button"
                       whileHover={{ scale: 1.1 }}
                       whileTap={{ scale: 0.9 }}
-                      className={`sm:col-span-1 inline-flex items-center justify-center rounded-xl border transition ${
+                      className={`sm:col-span-1 inline-flex items-center justify-center rounded-2xl border transition ${
                         theme === 'light'
                           ? 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'
                           : 'border-slate-600 bg-slate-700 text-slate-400 hover:bg-slate-600'
@@ -1352,7 +1516,7 @@ const EditModal: React.FC<EditModalProps> = ({ initial, onClose, onSave }) => {
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={addMember}
-                  className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-[14px] shadow-sm transition ${
+                  className={`inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-[14px] shadow-sm transition ${
                     theme === 'light'
                       ? 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
                       : 'border-slate-600 bg-slate-700 text-slate-300 hover:bg-slate-600'
@@ -1489,6 +1653,6 @@ function formatK(n: number) {
   if (n >= 1000) {
     const k = (n / 1000).toFixed(n % 1000 === 0 ? 0 : 1).replace('.0', '')
     return `${k}K`
-  }
+    }
   return String(n)
 }
