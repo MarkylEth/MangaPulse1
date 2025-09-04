@@ -340,39 +340,42 @@ export default function TeamPage(): JSX.Element {
   }, [user?.id, team?.id])
 
   const toggleFollow = async () => {
-    if (!user || !team || followPending) return
+    if (!user?.id || !team || followPending) return
     setFollowPending(true)
-
-    // текущие значения
+  
     const wasFollowing = isFollowing
     const prevCount = (team as any).followers_count ?? 0
-
-    // оптимистичное обновление UI
+  
+    // Оптимистичный апдейт
     setIsFollowing(!wasFollowing)
     setTeam(prev => prev ? {
-      ...prev,
+      ...(prev as any),
       followers_count: Math.max(0, prevCount + (wasFollowing ? -1 : 1))
     } as any : prev)
-
+  
     try {
-      const r = await fetch(`/api/teams/${(team as any).id}/follow`, {
+      const slugOrId = (team as any).slug ?? (team as any).id
+      const r = await fetch(`/api/teams/${encodeURIComponent(slugOrId)}/follow`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ follow: !wasFollowing })
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user.id, // важно: пробрасываем viewerId для route-guards
+        },
+        body: JSON.stringify({ follow: !wasFollowing }),
       })
-      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      if (!r.ok) throw new Error(await r.text())
       const j = await r.json()
       setIsFollowing(Boolean(j.i_follow ?? !wasFollowing))
       setTeam(prev => prev ? { ...(prev as any), followers_count: j.followers_count ?? prevCount } : prev)
     } catch (e) {
       console.error('toggleFollow failed', e)
-      // откат
+      // Откат
       setIsFollowing(wasFollowing)
       setTeam(prev => prev ? { ...(prev as any), followers_count: prevCount } : prev)
     } finally {
       setFollowPending(false)
     }
-  }
+  }  
 
   const copyLink = async () => {
     try {
@@ -1105,73 +1108,114 @@ export default function TeamPage(): JSX.Element {
           onClose={() => setIsEditOpen(false)}
           onSave={async (v) => {
             try {
+              console.log('Saving team data:', v)
+        
+              // Подготавливаем данные для отправки
               const payload: any = {
                 name: v.name.trim(),
-                avatar_url: v.avatar_url.trim(),
-                banner_url: v.banner_url?.trim() || null,
-                bio: v.bio,
-                discord_url: v.discord_enabled ? (v.discord_url?.trim() || null) : null,
-                boosty_url: v.boosty_enabled ? (v.boosty_url?.trim() || null) : null,
-                telegram_url: v.telegram_enabled ? (v.telegram_url?.trim() || null) : null,
-                vk_url: v.vk_enabled ? (v.vk_url?.trim() || null) : null,
-                langs: v.langs,
-                tags: v.tags,
+                bio: v.bio.trim() || null,
                 hiring_text: v.hiring_enabled ? (v.hiring_text?.trim() || null) : null,
-                hiring_enabled: v.hiring_enabled
+                hiring_enabled: v.hiring_enabled,
+                langs: v.langs.length ? v.langs : ['EN→RU'],
+                tags: v.tags.length ? v.tags : ['Манга'],
               }
-
-              // 1) обновляем саму команду
-              const rTeam = await fetch(`/api/teams/${(team as any).id}/edit`, {
+        
+              // Добавляем URL-поля только если они заполнены
+              if (v.avatar_url.trim()) {
+                payload.avatar_url = v.avatar_url.trim()
+              }
+              if (v.banner_url?.trim()) {
+                payload.banner_url = v.banner_url.trim()
+              }
+        
+              // Соцсети — добавляем только включенные
+              if (v.discord_enabled && v.discord_url?.trim()) {
+                payload.discord_url = v.discord_url.trim()
+              }
+              if (v.boosty_enabled && v.boosty_url?.trim()) {
+                payload.boosty_url = v.boosty_url.trim()
+              }
+              if (v.telegram_enabled && v.telegram_url?.trim()) {
+                payload.telegram_url = v.telegram_url.trim()
+              }
+              if (v.vk_enabled && v.vk_url?.trim()) {
+                payload.vk_url = v.vk_url.trim()
+              }
+        
+              console.log('Final payload:', payload)
+        
+              // 1) Обновляем саму команду
+              const rTeam = await fetch(`/api/teams/${encodeURIComponent(slug)}/edit`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-              })
-              if (!rTeam.ok) throw new Error(await rTeam.text())
-
-              // 2) синхронизируем участников
-              console.log('Updating members for team slug:', (team as any).slug)
-              console.log('Members to update:', v.members)
-
-              const rMembers = await fetch(`/api/teams/${encodeURIComponent((team as any).slug)}/members`, {
-                method: 'POST',
                 headers: { 
                   'Content-Type': 'application/json',
-                  ...(user?.id ? { 'x-user-id': user.id } : {})
+                  'x-user-id': user?.id || ''
                 },
-                body: JSON.stringify({ members: v.members }),
+                body: JSON.stringify(payload),
               })
-
-              console.log('Members update response status:', rMembers.status)
-
-              if (!rMembers.ok) {
-                const errorText = await rMembers.text()
-                console.error('Members update failed:', errorText)
-                throw new Error(`Members update failed: ${errorText}`)
-              }
-
-              const jm = await rMembers.json()
-              console.log('Members update response:', jm)              
-
-              // локальный апдейт
-              setTeam(t => (t ? { ...t, ...payload } : t))
-              const updated = await fetch(`/api/teams/${(team as any).id}/members`, {
-                cache: 'no-store',
-                headers: {
-                  'Content-Type': 'application/json',
+              
+              if (!rTeam.ok) {
+                const errorData = await rTeam.json().catch(() => ({}))
+                console.error('Team update failed:', errorData)
+                
+                // Понятное сообщение
+                let errorMessage = 'Не удалось обновить команду'
+                if (errorData.error === 'invalid_urls') {
+                  errorMessage = 'Проверьте правильность введенных URL-адресов'
+                } else if (errorData.error === 'forbidden') {
+                  errorMessage = 'У вас нет прав для редактирования этой команды'
+                } else if (errorData.error === 'unauthorized') {
+                  errorMessage = 'Необходимо войти в аккаунт'
+                } else if (errorData.message) {
+                  errorMessage = errorData.message
                 }
-              })
-              if (updated.ok) {
-                const data = await updated.json()
-                const items = Array.isArray(data?.items) ? data.items : []
-                setMembers(items as MemberWithProfile[])
-              } else {
-                console.error('Failed to re-fetch members after update')
-              }              
+                throw new Error(errorMessage)
+              }
+        
+              const teamResult = await rTeam.json()
+              console.log('Team update result:', teamResult)
+        
+              // 2) Синхронизируем участников (только если есть изменения)
+              if (v.members && v.members.length > 0) {
+                console.log('Updating members:', v.members)
+        
+                const rMembers = await fetch(`/api/teams/${encodeURIComponent(slug)}/members`, {
+                  method: 'POST',
+                  headers: { 
+                    'Content-Type': 'application/json',
+                    'x-user-id': user?.id || ''
+                  },
+                  body: JSON.stringify({ members: v.members }),
+                })
+        
+                if (rMembers.ok) {
+                  const membersResult = await rMembers.json()
+                  console.log('Members update result:', membersResult)
+                  
+                  // Обновляем участников в состоянии
+                  if (Array.isArray(membersResult?.items)) {
+                    setMembers(membersResult.items)
+                  }
+                } else {
+                  console.warn('Members update failed, but team data was saved')
+                }
+              }
+        
+              // Обновляем данные команды в состоянии (сохраняем актуальные счетчики)
+              setTeam(prevTeam => prevTeam ? { 
+                ...prevTeam, 
+                ...teamResult.team,
+                followers_count: (prevTeam as any).followers_count,
+                i_follow: (prevTeam as any).i_follow
+              } : prevTeam)
+              
               setIsEditOpen(false)
+              console.log('✅ Команда успешно обновлена!')
+              
             } catch (e) {
-              const msg = e instanceof Error ? e.message : typeof e === 'string' ? e : 'Unknown error'
+              const msg = e instanceof Error ? e.message : typeof e === 'string' ? e : 'Неизвестная ошибка'
               console.error('[Edit save]', e)
-              alert(`Не удалось сохранить: ${msg}`)
+              alert(`Ошибка: ${msg}`)
             }
           }}
         />

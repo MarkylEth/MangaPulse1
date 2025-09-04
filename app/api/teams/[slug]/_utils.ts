@@ -1,4 +1,4 @@
-// app/api/teams/[slug]/_utils.ts - ИСПРАВЛЕННАЯ ВЕРСИЯ
+// app/api/teams/[slug]/_utils.ts - ОБНОВЛЕННАЯ ВЕРСИЯ
 import { query } from '@/lib/db'
 
 export type TeamRow = {
@@ -30,73 +30,94 @@ export type TeamRow = {
 
 /** Полная загрузка команды по slug */
 export async function resolveTeamBySlug(slug: string): Promise<TeamRow | null> {
-  const r = await query<TeamRow>(
-    `
-    select
-      id, slug, name, created_by, created_at, updated_at,
-      bio, avatar_url, banner_url,
-      telegram_url, vk_url, discord_url, boosty_url,
-      tags, langs,
-      likes_count, followers_count,
-      started_at,
-      stats_projects, stats_pages, stats_inwork,
-      verified, hiring_text, hiring_enabled
-    from translator_teams
-    where slug = $1
-    limit 1
-    `,
-    [slug]
-  )
-  return r.rows[0] ?? null
+  try {
+    const r = await query<TeamRow>(
+      `
+      SELECT
+        id, slug, name, created_by, created_at, updated_at,
+        bio, avatar_url, banner_url,
+        telegram_url, vk_url, discord_url, boosty_url,
+        tags, langs,
+        likes_count, followers_count,
+        started_at,
+        stats_projects, stats_pages, stats_inwork,
+        verified, hiring_text, hiring_enabled
+      FROM translator_teams
+      WHERE slug = $1
+      LIMIT 1
+      `,
+      [slug]
+    )
+    return r.rows[0] ?? null
+  } catch (e) {
+    console.error('Error resolving team by slug:', e)
+    return null
+  }
 }
 
 /** Состоит ли пользователь в команде */
 export async function isTeamMember(teamId: number, userId: string): Promise<boolean> {
-  const r = await query<{ exists: boolean }>(
-    `select exists(
-       select 1 from translator_team_members
-       where team_id = $1 and user_id = $2::uuid
-     ) as exists`,
-    [teamId, userId]
-  )
-  return !!r.rows[0]?.exists
+  try {
+    const r = await query<{ exists: boolean }>(
+      `SELECT exists(
+         SELECT 1 FROM translator_team_members
+         WHERE team_id = $1 AND user_id = $2::uuid
+       ) as exists`,
+      [teamId, userId]
+    )
+    return !!r.rows[0]?.exists
+  } catch (e) {
+    console.error('Error checking team membership:', e)
+    return false
+  }
 }
 
 /** Может ли пользователь редактировать команду */
 export async function isTeamEditor(teamId: number, userId: string): Promise<boolean> {
-  // Создатель всегда может
-  const created = await query<{ exists: boolean }>(
-    `select exists(select 1 from translator_teams where id = $1 and created_by = $2::uuid) as exists`,
-    [teamId, userId]
-  )
-  if (created.rows[0]?.exists) return true
+  try {
+    // Создатель всегда может
+    const created = await query<{ exists: boolean }>(
+      `SELECT exists(SELECT 1 FROM translator_teams WHERE id = $1 AND created_by = $2::uuid) as exists`,
+      [teamId, userId]
+    )
+    if (created.rows[0]?.exists) return true
 
-  // Участник с ролью lead или editor
-  const r = await query<{ exists: boolean }>(
-    `select exists(
-       select 1 from translator_team_members
-       where team_id = $1 and user_id = $2::uuid and role = any($3::text[])
-     ) as exists`,
-    [teamId, userId, ['lead', 'leader', 'editor']]
-  )
-  return !!r.rows[0]?.exists
+    // Участник с ролью lead, leader или editor
+    const r = await query<{ exists: boolean }>(
+      `SELECT exists(
+         SELECT 1 FROM translator_team_members
+         WHERE team_id = $1 AND user_id = $2::uuid 
+         AND role = any($3::text[])
+       ) as exists`,
+      [teamId, userId, ['lead', 'leader', 'editor']]
+    )
+    return !!r.rows[0]?.exists
+  } catch (e) {
+    console.error('Error checking team editor permissions:', e)
+    return false
+  }
 }
 
 /** Роль участника */
 export async function getMemberRole(teamId: number, userId: string): Promise<string> {
-  // Проверяем создателя
-  const created = await query<{ exists: boolean }>(
-    `select exists(select 1 from translator_teams where id = $1 and created_by = $2::uuid) as exists`,
-    [teamId, userId]
-  )
-  if (created.rows[0]?.exists) return 'leader'
+  try {
+    // Проверяем создателя
+    const created = await query<{ exists: boolean }>(
+      `SELECT exists(SELECT 1 FROM translator_teams WHERE id = $1 AND created_by = $2::uuid) as exists`,
+      [teamId, userId]
+    )
+    if (created.rows[0]?.exists) return 'leader'
 
-  // Получаем роль из таблицы участников
-  const r = await query<{ role: string }>(
-    `select role from translator_team_members where team_id = $1 and user_id = $2::uuid limit 1`,
-    [teamId, userId]
-  )
-  return r.rows[0]?.role ?? 'none'
+    // Получаем роль из таблицы участников
+    const r = await query<{ role: string }>(
+      `SELECT role FROM translator_team_members WHERE team_id = $1 AND user_id = $2::uuid LIMIT 1`,
+      [teamId, userId]
+    )
+    return r.rows[0]?.role ?? 'none'
+  } catch (e) {
+    console.error('Error getting member role:', e)
+    return 'none'
+  }
 }
 
 /** Может ли пользователь создавать посты */
@@ -112,6 +133,20 @@ export async function canPinPosts(teamId: number, userId: string): Promise<boole
   return role === 'leader' || role === 'lead'
 }
 
+/** Проверить, подписан ли пользователь на команду */
+export async function isUserFollowingTeam(teamId: number, userId: string): Promise<boolean> {
+  try {
+    const r = await query(
+      'SELECT 1 FROM team_followers WHERE team_id = $1 AND user_id = $2::uuid LIMIT 1',
+      [teamId, userId]
+    )
+    return (r?.rowCount ?? 0) > 0
+  } catch (e) {
+    console.error('Error checking follow status:', e)
+    return false
+  }
+}
+
 /** Получить команду с дополнительными данными пользователя */
 export async function getTeamWithUserData(slug: string, userId: string | null) {
   const team = await resolveTeamBySlug(slug)
@@ -119,14 +154,14 @@ export async function getTeamWithUserData(slug: string, userId: string | null) {
 
   // Подсчет подписчиков из team_followers
   const followersRes = await query<{ cnt: number }>(
-    'select count(*)::int as cnt from team_followers where team_id = $1',
+    'SELECT count(*)::int as cnt FROM team_followers WHERE team_id = $1',
     [team.id]
   )
-  const followers_count = followersRes.rows[0]?.cnt ?? team.followers_count ?? 0
+  const followers_count = followersRes.rows[0]?.cnt ?? 0
 
   // Подсчет участников из translator_team_members
   const membersRes = await query<{ cnt: number }>(
-    'select count(*)::int as cnt from translator_team_members where team_id = $1',
+    'SELECT count(*)::int as cnt FROM translator_team_members WHERE team_id = $1',
     [team.id]
   )
   const members_count = membersRes.rows[0]?.cnt ?? 0
@@ -139,11 +174,7 @@ export async function getTeamWithUserData(slug: string, userId: string | null) {
 
   if (userId) {
     // Проверяем подписку
-    const followRes = await query(
-      'select 1 from team_followers where team_id = $1 and user_id = $2::uuid limit 1',
-      [team.id, userId]
-    )
-    i_follow = (followRes?.rowCount ?? 0) > 0
+    i_follow = await isUserFollowingTeam(team.id, userId)
 
     // Получаем роль и права
     user_role = await getMemberRole(team.id, userId)

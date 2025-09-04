@@ -8,38 +8,61 @@ type Params = { params: { slug: string } }
 
 /** Профиль команды: базовые поля + подписчики + счётчик участников + флаг «я подписан» */
 export async function GET(req: NextRequest, { params }: Params) {
-  const uid = await getViewerId(req) // -> string | null
-  const team = await resolveTeamBySlug(params.slug)
-  if (!team) return NextResponse.json({ error: 'not_found' }, { status: 404 })
+  try {
+    const uid = await getViewerId(req) // -> string | null
+    const team = await resolveTeamBySlug(params.slug)
+    
+    if (!team) {
+      return NextResponse.json({ error: 'not_found' }, { status: 404 })
+    }
 
-  // Живой подсчёт подписчиков (чтобы не было рассинхрона)
-  const followersRes = await query<{ cnt: number }>(
-    'select count(*)::int as cnt from team_followers where team_id=$1',
-    [team.id]
-  )
-  const followers_count = followersRes.rows[0]?.cnt ?? team.followers_count ?? 0
-
-  // Счётчик участников для бейджа «Команда (N)»
-  const membersRes = await query<{ cnt: number }>(
-    'select count(*)::int as cnt from translator_team_members where team_id=$1',
-    [team.id]
-  )
-  const members_count = membersRes.rows[0]?.cnt ?? 0
-
-  // Подписан ли текущий пользователь
-  let i_follow = false
-  if (uid) {
-    const res = await query(
-      'select 1 from team_followers where team_id=$1 and user_id=$2::uuid limit 1',
-      [team.id, uid]
+    // Живой подсчёт подписчиков из team_followers
+    const followersRes = await query<{ cnt: number }>(
+      'SELECT count(*)::int as cnt FROM team_followers WHERE team_id = $1',
+      [team.id]
     )
-    i_follow = (res?.rowCount ?? 0) > 0
-  }
+    const followers_count = followersRes.rows[0]?.cnt ?? 0
 
-  return NextResponse.json({
-    ...team,
-    followers_count,
-    members_count,
-    i_follow,
-  })
+    // Счётчик участников для бейджа «Команда (N)»
+    const membersRes = await query<{ cnt: number }>(
+      'SELECT count(*)::int as cnt FROM translator_team_members WHERE team_id = $1',
+      [team.id]
+    )
+    const members_count = membersRes.rows[0]?.cnt ?? 0
+
+    // Проверяем, подписан ли текущий пользователь
+    let i_follow = false
+    if (uid) {
+      const followCheckRes = await query(
+        'SELECT 1 FROM team_followers WHERE team_id = $1 AND user_id = $2::uuid LIMIT 1',
+        [team.id, uid]
+      )
+      i_follow = (followCheckRes?.rowCount ?? 0) > 0
+    }
+
+    // Обновляем счетчик в основной таблице, если он расходится
+    if (team.followers_count !== followers_count) {
+      await query(
+        'UPDATE translator_teams SET followers_count = $1 WHERE id = $2',
+        [followers_count, team.id]
+      )
+      // Обновляем объект team
+      team.followers_count = followers_count
+    }
+
+    return NextResponse.json({
+      ...team,
+      followers_count,
+      members_count,
+      i_follow,
+    })
+
+  } catch (e) {
+    console.error('Team GET error:', e)
+    return NextResponse.json({ 
+      error: 'internal_error',
+      message: 'Server error occurred',
+      detail: process.env.NODE_ENV === 'development' ? (e instanceof Error ? e.message : String(e)) : undefined
+    }, { status: 500 })
+  }
 }
