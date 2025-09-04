@@ -1,4 +1,4 @@
-// app/api/teams/[slug]/posts/route.ts - адаптированный под вашу БД
+// app/api/teams/[slug]/posts/route.ts - ИСПРАВЛЕННАЯ ВЕРСИЯ
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { getViewerId } from '@/lib/auth/route-guards'
@@ -16,10 +16,10 @@ export async function GET(req: NextRequest, { params }: Params) {
     const limit = Math.min(parseInt(searchParams.get('limit') || '30', 10), 100)
     const offset = Math.max(parseInt(searchParams.get('offset') || '0', 10), 0)
 
-    // Адаптируем запрос под вашу структуру БД
+    // Исправленный запрос - используем правильные типы данных
     const r = await query<{
       id: string
-      team_id: number
+      team_id: string  // BIGINT возвращается как string
       author_id: string
       body: string
       title: string | null
@@ -41,8 +41,8 @@ export async function GET(req: NextRequest, { params }: Params) {
       with base as (
         select
           p.id::text,
-          p.team_id,
-          p.author_id,
+          p.team_id::text,  -- Конвертируем BIGINT в текст
+          p.author_id::text,
           p.body,
           p.title,
           p.images,
@@ -69,14 +69,15 @@ export async function GET(req: NextRequest, { params }: Params) {
         pr.username as author_username,
         pr.avatar_url as author_avatar_url
       from base b
-      left join profiles pr on pr.id = b.author_id
+      left join profiles pr on pr.id = b.author_id::uuid
       `,
       [team.id, limit, offset, uid]
     )
 
+    // Преобразуем в правильный формат для фронтенда
     const items = r.rows.map((row) => ({
       id: row.id,
-      teamId: row.team_id,
+      teamId: parseInt(row.team_id), // Конвертируем обратно в число для фронта
       author: { 
         id: row.author_id, 
         username: row.author_username, 
@@ -112,9 +113,9 @@ export async function POST(req: NextRequest, { params }: Params) {
     const uid = await getViewerId(req)
     if (!uid) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    // Проверяем членство в команде используя вашу таблицу translator_team_members
+    // Проверяем членство в команде
     const member = await query(
-      'select 1 from translator_team_members where team_id = $1 and user_id = $2',
+      'select 1 from translator_team_members where team_id = $1 and user_id = $2::uuid',
       [team.id, uid]
     )
     if (!member.rowCount) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -131,13 +132,13 @@ export async function POST(req: NextRequest, { params }: Params) {
       ? payload.post_type 
       : 'text'
 
-    // Вставляем пост в вашу таблицу team_posts (используя BIGINT для team_id)
+    // Вставляем пост
     const inserted = await query<{ id: string }>(
       `
       insert into team_posts (
         team_id, author_id, body, title, images, featured_image, post_type, is_published, is_pinned
       )
-      values ($1, $2, $3, $4, $5, $6, $7, true, false)
+      values ($1, $2::uuid, $3, $4, $5, $6, $7, true, false)
       returning id::text
       `,
       [team.id, uid, body, title, images, featured, postType]

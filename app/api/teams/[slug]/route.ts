@@ -1,13 +1,14 @@
+// app/api/teams/[slug]/route.ts - ИСПРАВЛЕННАЯ ВЕРСИЯ
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
-import { getAuthUser } from '@/lib/auth/route-guards'
+import { getViewerId } from '@/lib/auth/route-guards'
 import { resolveTeamBySlug } from './_utils'
 
 type Params = { params: { slug: string } }
 
 /** Профиль команды: базовые поля + подписчики + счётчик участников + флаг «я подписан» */
 export async function GET(req: NextRequest, { params }: Params) {
-  const me = await getAuthUser(req) // -> { id } | null
+  const uid = await getViewerId(req) // -> string | null
   const team = await resolveTeamBySlug(params.slug)
   if (!team) return NextResponse.json({ error: 'not_found' }, { status: 404 })
 
@@ -27,10 +28,10 @@ export async function GET(req: NextRequest, { params }: Params) {
 
   // Подписан ли текущий пользователь
   let i_follow = false
-  if (me?.id) {
+  if (uid) {
     const res = await query(
-      'select 1 from team_followers where team_id=$1 and user_id=$2 limit 1',
-      [team.id, me.id]
+      'select 1 from team_followers where team_id=$1 and user_id=$2::uuid limit 1',
+      [team.id, uid]
     )
     i_follow = (res?.rowCount ?? 0) > 0
   }

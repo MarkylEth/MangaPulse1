@@ -1,4 +1,4 @@
-// app/api/teams/[slug]/posts/[postId]/like/route.ts
+// app/api/teams/[slug]/posts/[postId]/like/route.ts - ИСПРАВЛЕННАЯ ВЕРСИЯ
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { getViewerId } from '@/lib/auth/route-guards'

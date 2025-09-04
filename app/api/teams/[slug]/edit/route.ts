@@ -1,3 +1,4 @@
+// app/api/teams/[slug]/edit/route.ts - ИСПРАВЛЕННАЯ ВЕРСИЯ
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { getViewerId } from '@/lib/auth/route-guards'
@@ -49,7 +50,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
     const body = await req.json().catch(() => ({} as any))
 
-    // Собирам динамический апдейт
+    // Собираем динамический апдейт
     const sets: string[] = []
     const paramsArr: any[] = []
 
@@ -62,11 +63,17 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     const name = toStringOrNull(body.name)
     if (name) pushSet('name = ?', name)
 
-    const bio = toStringOrNull(body.bio)
-    pushSet('bio = ?', bio) // допускаем null → очистка
+    // bio может быть null для очистки
+    if ('bio' in body) {
+      const bio = toStringOrNull(body.bio)
+      pushSet('bio = ?', bio)
+    }
 
-    const hiring_text = toStringOrNull(body.hiring_text)
-    pushSet('hiring_text = ?', hiring_text)
+    // hiring_text может быть null для очистки
+    if ('hiring_text' in body) {
+      const hiring_text = toStringOrNull(body.hiring_text)
+      pushSet('hiring_text = ?', hiring_text)
+    }
 
     // Даты
     const started_at_raw = toStringOrNull(body.started_at)
@@ -85,7 +92,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       pushSet('hiring_enabled = ?', toBool(body.hiring_enabled))
     }
 
-    // Соцсети/URls
+    // Соцсети/URLs
     const urlFields: Array<[keyof typeof body, string]> = [
       ['avatar_url', 'avatar_url'],
       ['banner_url', 'banner_url'],
@@ -98,11 +105,21 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     const invalid: string[] = []
     for (const [srcKey, col] of urlFields) {
       if (srcKey in body) {
-        const norm = isHttpUrl(body[srcKey])
-        if (body[srcKey] && !norm) invalid.push(col)
-        pushSet(`${col} = ?`, norm) // null если пусто/некорректно
+        const rawValue = body[srcKey]
+        if (rawValue === null || rawValue === '') {
+          // Явно устанавливаем null для очистки поля
+          pushSet(`${col} = ?`, null)
+        } else {
+          const norm = isHttpUrl(rawValue)
+          if (!norm) {
+            invalid.push(col)
+          } else {
+            pushSet(`${col} = ?`, norm)
+          }
+        }
       }
     }
+    
     if (invalid.length) {
       return NextResponse.json({ error: 'invalid_urls', fields: invalid }, { status: 400 })
     }
@@ -126,11 +143,18 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     // Выполняем UPDATE
     paramsArr.push(team.id)
     const sql = `update translator_teams set ${sets.join(', ')} where id = $${paramsArr.length} returning *`
+    
+    console.log('SQL:', sql)
+    console.log('Params:', paramsArr)
+    
     const updated = await query(sql, paramsArr)
 
     return NextResponse.json({ ok: true, team: updated.rows[0] })
   } catch (e) {
     console.error('team edit PATCH error', e)
-    return NextResponse.json({ error: 'internal' }, { status: 500 })
+    return NextResponse.json({ 
+      error: 'internal', 
+      detail: e instanceof Error ? e.message : String(e) 
+    }, { status: 500 })
   }
 }

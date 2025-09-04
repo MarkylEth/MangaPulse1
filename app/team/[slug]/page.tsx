@@ -242,6 +242,8 @@ export default function TeamPage(): JSX.Element {
     isFirst ? setInitialLoading(true) : setRefreshing(true)
     if (withTitles) setLoadingTitles(true)
 
+      console.log('Loading team:', slug)
+
     try {
       // 1) Команда — NEON API
       const rTeam = await fetch(`/api/teams/${encodeURIComponent(slug)}`, { cache: 'no-store' })
@@ -252,6 +254,7 @@ export default function TeamPage(): JSX.Element {
         return
       }
       const t = await rTeam.json()
+      console.log('Team data:', t)
       setTeam(t)
       setIsFollowing(Boolean(t.i_follow))
 
@@ -271,21 +274,34 @@ export default function TeamPage(): JSX.Element {
         }
       }
 
-      // 3) Участники — NEON API
+      // 3) Участники — правильный API endpoint
       if (t?.id) {
         try {
-          const rMem = await fetch(`/api/teams/${t.id}/members`, { cache: 'no-store' })
+          console.log('Loading members for team:', t.id, 'slug:', slug)
+          const rMem = await fetch(`/api/teams/${encodeURIComponent(slug)}/members`, { 
+            cache: 'no-store',
+            headers: {
+              'Content-Type': 'application/json',
+            }
+          })
+          console.log('Members API response status:', rMem.status)
           if (rMem.ok) {
             const jm = await rMem.json()
+            console.log('Members response:', jm)
             const items = Array.isArray(jm?.items) ? jm.items : []
+            console.log('Setting members:', items)
             setMembers(items as MemberWithProfile[])
           } else {
+            const errorText = await rMem.text()
+            console.error('Failed to fetch members:', rMem.status, errorText)
             setMembers([])
           }
-        } catch {
+        } catch (e) {
+          console.error('Error fetching members:', e)
           setMembers([])
         }
       } else {
+        console.log('No team ID, clearing members')
         setMembers([])
       }
     } catch (e) {
@@ -785,6 +801,7 @@ export default function TeamPage(): JSX.Element {
 
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
                     {(showAllMembers ? members : members.slice(0, 12)).map((m, idx) => {
+                      console.log('Rendering member:', idx, m)
                       const username = m.profile?.username || ''
                       const profileHref = username ? `/profile/${username}` : `/profile/${m.user_id}`
                       const label = roleLabel(m.role)
@@ -1112,17 +1129,44 @@ export default function TeamPage(): JSX.Element {
               if (!rTeam.ok) throw new Error(await rTeam.text())
 
               // 2) синхронизируем участников
-              const rMembers = await fetch(`/api/teams/${(team as any).id}/members`, {
+              console.log('Updating members for team slug:', (team as any).slug)
+              console.log('Members to update:', v.members)
+
+              const rMembers = await fetch(`/api/teams/${encodeURIComponent((team as any).slug)}/members`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ members: v.members }), // [{username, role}]
+                headers: { 
+                  'Content-Type': 'application/json',
+                  ...(user?.id ? { 'x-user-id': user.id } : {})
+                },
+                body: JSON.stringify({ members: v.members }),
               })
-              if (!rMembers.ok) throw new Error(await rMembers.text())
+
+              console.log('Members update response status:', rMembers.status)
+
+              if (!rMembers.ok) {
+                const errorText = await rMembers.text()
+                console.error('Members update failed:', errorText)
+                throw new Error(`Members update failed: ${errorText}`)
+              }
+
               const jm = await rMembers.json()
+              console.log('Members update response:', jm)              
 
               // локальный апдейт
               setTeam(t => (t ? { ...t, ...payload } : t))
-              setMembers(Array.isArray(jm?.items) ? jm.items : [])
+              const updated = await fetch(`/api/teams/${(team as any).id}/members`, {
+                cache: 'no-store',
+                headers: {
+                  'Content-Type': 'application/json',
+                }
+              })
+              if (updated.ok) {
+                const data = await updated.json()
+                const items = Array.isArray(data?.items) ? data.items : []
+                setMembers(items as MemberWithProfile[])
+              } else {
+                console.error('Failed to re-fetch members after update')
+              }              
               setIsEditOpen(false)
             } catch (e) {
               const msg = e instanceof Error ? e.message : typeof e === 'string' ? e : 'Unknown error'

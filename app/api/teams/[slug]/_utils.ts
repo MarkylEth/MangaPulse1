@@ -1,8 +1,8 @@
-// app/api/teams/[slug]/_utils.ts - адаптированный под вашу БД
+// app/api/teams/[slug]/_utils.ts - ИСПРАВЛЕННАЯ ВЕРСИЯ
 import { query } from '@/lib/db'
 
 export type TeamRow = {
-  id: number                    // BIGINT
+  id: number                    // BIGINT в JS = number
   slug: string | null
   name: string
   created_by: string           // UUID
@@ -55,7 +55,7 @@ export async function isTeamMember(teamId: number, userId: string): Promise<bool
   const r = await query<{ exists: boolean }>(
     `select exists(
        select 1 from translator_team_members
-       where team_id = $1 and user_id = $2
+       where team_id = $1 and user_id = $2::uuid
      ) as exists`,
     [teamId, userId]
   )
@@ -66,7 +66,7 @@ export async function isTeamMember(teamId: number, userId: string): Promise<bool
 export async function isTeamEditor(teamId: number, userId: string): Promise<boolean> {
   // Создатель всегда может
   const created = await query<{ exists: boolean }>(
-    `select exists(select 1 from translator_teams where id = $1 and created_by = $2) as exists`,
+    `select exists(select 1 from translator_teams where id = $1 and created_by = $2::uuid) as exists`,
     [teamId, userId]
   )
   if (created.rows[0]?.exists) return true
@@ -75,7 +75,7 @@ export async function isTeamEditor(teamId: number, userId: string): Promise<bool
   const r = await query<{ exists: boolean }>(
     `select exists(
        select 1 from translator_team_members
-       where team_id = $1 and user_id = $2 and role = any($3::text[])
+       where team_id = $1 and user_id = $2::uuid and role = any($3::text[])
      ) as exists`,
     [teamId, userId, ['lead', 'leader', 'editor']]
   )
@@ -86,14 +86,14 @@ export async function isTeamEditor(teamId: number, userId: string): Promise<bool
 export async function getMemberRole(teamId: number, userId: string): Promise<string> {
   // Проверяем создателя
   const created = await query<{ exists: boolean }>(
-    `select exists(select 1 from translator_teams where id = $1 and created_by = $2) as exists`,
+    `select exists(select 1 from translator_teams where id = $1 and created_by = $2::uuid) as exists`,
     [teamId, userId]
   )
   if (created.rows[0]?.exists) return 'leader'
 
   // Получаем роль из таблицы участников
   const r = await query<{ role: string }>(
-    `select role from translator_team_members where team_id = $1 and user_id = $2 limit 1`,
+    `select role from translator_team_members where team_id = $1 and user_id = $2::uuid limit 1`,
     [teamId, userId]
   )
   return r.rows[0]?.role ?? 'none'
@@ -140,7 +140,7 @@ export async function getTeamWithUserData(slug: string, userId: string | null) {
   if (userId) {
     // Проверяем подписку
     const followRes = await query(
-      'select 1 from team_followers where team_id = $1 and user_id = $2 limit 1',
+      'select 1 from team_followers where team_id = $1 and user_id = $2::uuid limit 1',
       [team.id, userId]
     )
     i_follow = (followRes?.rowCount ?? 0) > 0
@@ -162,53 +162,6 @@ export async function getTeamWithUserData(slug: string, userId: string | null) {
     can_edit,
     can_pin,
   }
-}
-
-/** Получить участников команды */
-export async function getTeamMembers(teamId: number) {
-  const r = await query<{
-    user_id: string
-    role: string
-    username: string | null
-    avatar_url: string | null
-    added_at: string
-  }>(
-    `
-    select 
-      m.user_id, 
-      m.role,
-      m.added_at,
-      p.username, 
-      p.avatar_url
-    from translator_team_members m
-    left join profiles p on p.id = m.user_id
-    where m.team_id = $1
-    order by
-      case m.role
-        when 'leader' then 0
-        when 'lead' then 1
-        when 'editor' then 2
-        when 'translator' then 3
-        when 'typesetter' then 4
-        when 'member' then 5
-        else 6
-      end,
-      m.added_at asc,
-      coalesce(p.username, '') asc
-    `,
-    [teamId]
-  )
-
-  return r.rows.map((x) => ({
-    user_id: x.user_id,
-    role: x.role,
-    joined_at: x.added_at,
-    profile: {
-      id: x.user_id,
-      username: x.username,
-      avatar_url: x.avatar_url,
-    }
-  }))
 }
 
 // Совместимость

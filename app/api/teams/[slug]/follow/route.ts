@@ -1,4 +1,4 @@
-// app/api/teams/[slug]/follow/route.ts - адаптированный под вашу БД
+// app/api/teams/[slug]/follow/route.ts - ИСПРАВЛЕННАЯ ВЕРСИЯ
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { getViewerId } from '@/lib/auth/route-guards';
