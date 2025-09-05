@@ -72,11 +72,23 @@ const ROLE_LABEL: Record<string, string> = {
   translator: 'Переводчик',
   typesetter: 'Тайпсеттер',
 }
-const ROLE_BADGE: Record<string, string> = {
-  leader: 'bg-amber-500 text-white',
-  editor: 'bg-blue-500 text-white',
-  translator: 'bg-green-500 text-white',
-  typesetter: 'bg-purple-500 text-white',
+const ROLE_BADGE: Record<string, { light: string; dark: string }> = {
+  leader: {
+    light: 'bg-amber-100 text-amber-700 border-amber-200',
+    dark: 'bg-amber-900/30 text-amber-300 border-amber-700/50'
+  },
+  editor: {
+    light: 'bg-blue-100 text-blue-700 border-blue-200',
+    dark: 'bg-blue-900/30 text-blue-300 border-blue-700/50'
+  },
+  translator: {
+    light: 'bg-green-100 text-green-700 border-green-200',
+    dark: 'bg-green-900/30 text-green-300 border-green-700/50'
+  },
+  typesetter: {
+    light: 'bg-purple-100 text-purple-700 border-purple-200',
+    dark: 'bg-purple-900/30 text-purple-300 border-purple-700/50'
+  },
 }
 const CAN_POST_ROLES = new Set(['leader', 'editor', 'translator', 'typesetter'])
 
@@ -653,9 +665,14 @@ export default function TeamPosts({
     if (!r) return 'Участник'
     return ROLE_LABEL[r] ?? r
   }
-  const getRoleColor = (role: string | null) => {
+  const getRoleColor = (role: string | null, theme: 'light' | 'dark') => {
     const r = normalizeRole(role)
-    return (r && ROLE_BADGE[r]) ? ROLE_BADGE[r] : 'bg-gray-500 text-white'
+    if (r && ROLE_BADGE[r]) {
+      return `${ROLE_BADGE[r][theme]} border font-medium`
+    }
+    return theme === 'light' 
+      ? 'bg-gray-100 text-gray-600 border-gray-200 border font-medium'
+      : 'bg-gray-700/30 text-gray-300 border-gray-600/50 border font-medium'
   }
   const formatText = (text: string) =>
     text
@@ -1383,9 +1400,9 @@ const CommentBubble: React.FC<{
           <div className="flex items-center gap-2 mb-1">
             <span className={`text-sm font-medium ${textMain}`}>{c.username || 'Аноним'}</span>
             {c.team_role && (
-              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getRoleColor(normalizeRole(c.team_role))}`}>
-                {getRoleLabel(normalizeRole(c.team_role))}
-              </span>
+              <span className={`px-2 py-0.5 rounded-full text-xs ${getRoleColor(post.author_role, theme)}`}>
+                {getRoleLabel(post.author_role)}
+            </span>
             )}
             <time className={`text-xs ${textMuted}`}>{new Date(c.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</time>
 

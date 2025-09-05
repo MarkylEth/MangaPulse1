@@ -116,40 +116,47 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
     // URL поля - обрабатываем каждое отдельно
     const urlFields: Array<[string, string]> = [
-      ['avatar_url', 'avatar_url'],
-      ['banner_url', 'banner_url'],
-      ['telegram_url', 'telegram_url'],
-      ['vk_url', 'vk_url'],
-      ['discord_url', 'discord_url'],
-      ['boosty_url', 'boosty_url'],
-    ]
+  ['avatar_url', 'avatar_url'],
+  ['banner_url', 'banner_url'],
+  ['telegram_url', 'telegram_url'],
+  ['vk_url', 'vk_url'],
+  ['discord_url', 'discord_url'],
+  ['boosty_url', 'boosty_url'],
+]
 
-    for (const [bodyKey, dbColumn] of urlFields) {
-      if (bodyKey in body) {
-        const rawValue = body[bodyKey]
+for (const [bodyKey, dbColumn] of urlFields) {
+  // КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: проверяем, отправлен ли ключ в payload
+  if (bodyKey in body) {
+    const rawValue = body[bodyKey]
 
-        if (rawValue === null || rawValue === '' || rawValue === undefined) {
-          // Очищаем поле
-          updateFields.push(`${dbColumn} = $${paramIndex}`)
-          updateValues.push(null)
-          paramIndex++
-        } else {
-          // Проверяем URL (упрощённая валидация)
-          const validUrl = isHttpUrl(rawValue)
-          if (validUrl) {
-            updateFields.push(`${dbColumn} = $${paramIndex}`)
-            updateValues.push(validUrl)
-            paramIndex++
-          }
-          // Если URL невалидный, игнорируем поле
-        }
+    if (rawValue === null || rawValue === '' || rawValue === undefined) {
+      // Явно очищаем поле (ползунок выключен или поле пустое)
+      updateFields.push(`${dbColumn} = $${paramIndex}`)
+      updateValues.push(null)
+      paramIndex++
+      console.log(`Clearing ${dbColumn} - setting to NULL`)
+    } else {
+      // Проверяем и сохраняем валидный URL
+      const validUrl = isHttpUrl(rawValue)
+      if (validUrl) {
+        updateFields.push(`${dbColumn} = $${paramIndex}`)
+        updateValues.push(validUrl)
+        paramIndex++
+        console.log(`Setting ${dbColumn} to:`, validUrl)
+      } else {
+        // Невалидный URL - тоже очищаем
+        updateFields.push(`${dbColumn} = $${paramIndex}`)
+        updateValues.push(null)
+        paramIndex++
+        console.log(`Invalid URL for ${dbColumn}, setting to NULL`)
       }
     }
-
+  }
+}
     // Массивы
     if ('tags' in body) {
       updateFields.push(`tags = $${paramIndex}`)
-      updateValues.push(toTextArray(body.tags))
+      updateValues.push(toTextArray(body.tags)) // разрешить пустой массив
       paramIndex++
     }
 

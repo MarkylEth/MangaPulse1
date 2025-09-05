@@ -686,62 +686,68 @@ export default function TeamPage(): JSX.Element {
             >
               {/* Левая колонка */}
               <div className="space-y-6">
-                <Section>
-                  <SectionTitle icon={<UsersIcon className="w-5 h-5" />}>О команде</SectionTitle>
-                  {team.bio?.trim() && (
-                    <AboutCollapser text={team.bio} theme={theme} collapsedHeight={220} />
-                  )}
+              <Section>
+                <SectionTitle icon={<UsersIcon className="w-5 h-5" />}>О команде</SectionTitle>
+                {team.bio?.trim() && (
+                  <AboutCollapser text={team.bio} theme={theme} collapsedHeight={220} />
+                )}
 
-                  <SectionTitle>Что переводят</SectionTitle>
-                  <div className="mb-4 flex flex-wrap gap-2">
-                    {(showAllTags ? (team.tags || []) : (team.tags || []).slice(0, 6)).map((t, i) => (
-                      <motion.span
-                        key={`tag-${i}`}
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ delay: i * 0.05 }}
-                        className={`rounded-full px-3 py-1.5 text-[13px] font-medium transition-colors ${
-                          theme === 'light'
-                            ? 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                            : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                        }`}
-                      >
-                        {t}
-                      </motion.span>
-                    ))}
-                    {(team.tags || []).length > 6 && !showAllTags && (
-                      <button
-                        onClick={() => setShowAllTags(true)}
-                        className={`rounded-full px-3 py-1.5 text-[13px] font-medium transition-colors ${
-                          theme === 'light'
-                            ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                            : 'bg-blue-600/20 text-blue-400 hover:bg-blue-600/30'
-                        }`}
-                      >
-                        +{(team.tags || []).length - 6} еще
-                      </button>
-                    )}
-                  </div>
+                {/* УСЛОВНОЕ ОТОБРАЖЕНИЕ: показываем "Что переводят" только если есть теги */}
+                {(Array.isArray(team.tags) && team.tags.length > 0) && (
+                  <>
+                    <SectionTitle>Что переводят</SectionTitle>
+                    <div className="mb-4 flex flex-wrap gap-2">
+                      {(showAllTags ? team.tags : team.tags.slice(0, 6)).map((t, i) => (
+                        <motion.span
+                          key={`tag-${i}`}
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ delay: i * 0.05 }}
+                          className={`rounded-full px-3 py-1.5 text-[13px] font-medium transition-colors ${
+                            theme === 'light'
+                              ? 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                              : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                          }`}
+                        >
+                          {t}
+                        </motion.span>
+                      ))}
 
-                  <SectionTitle className="mt-2">Направления перевода</SectionTitle>
-                  <div className="mb-4 flex flex-wrap gap-2">
-                    {(team.langs?.length ? Array.from(new Set(team.langs)) : ['EN→RU']).map((lng, i) => (
-                      <motion.span
-                        key={`lang-${i}`}
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ delay: i * 0.05 + 0.2 }}
-                        className={`rounded-full px-3 py-1.5 text-[13px] font-medium ${
-                          theme === 'light'
-                            ? 'bg-[#e3f2fd] text-[#1976D2]'
-                            : 'bg-blue-600/20 text-blue-400 border border-blue-600/30'
-                        }`}
-                      >
-                        {lng}
-                      </motion.span>
-                    ))}
-                  </div>
-                </Section>
+                      {team.tags.length > 6 && !showAllTags && (
+                        <button
+                          onClick={() => setShowAllTags(true)}
+                          className={`rounded-full px-3 py-1.5 text-[13px] font-medium transition-colors ${
+                            theme === 'light'
+                              ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                              : 'bg-blue-600/20 text-blue-400 hover:bg-blue-600/30'
+                          }`}
+                        >
+                          +{team.tags.length - 6} еще
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                <SectionTitle className="mt-2">Направления перевода</SectionTitle>
+                <div className="mb-4 flex flex-wrap gap-2">
+                  {(team.langs?.length ? Array.from(new Set(team.langs)) : ['EN→RU']).map((lng, i) => (
+                    <motion.span
+                      key={`lang-${i}`}
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: i * 0.05 + 0.2 }}
+                      className={`rounded-full px-3 py-1.5 text-[13px] font-medium ${
+                        theme === 'light'
+                          ? 'bg-[#e3f2fd] text-[#1976D2]'
+                          : 'bg-blue-600/20 text-blue-400 border border-blue-600/30'
+                      }`}
+                    >
+                      {lng}
+                    </motion.span>
+                  ))}
+                </div>
+              </Section>
 
                 {/* Статистика */}
                 <Section>
@@ -802,63 +808,85 @@ export default function TeamPage(): JSX.Element {
                       </SectionTitle>
                     </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                    {(showAllMembers ? members : members.slice(0, 12)).map((m, idx) => {
-                      console.log('Rendering member:', idx, m)
-                      const username = m.profile?.username || ''
-                      const profileHref = username ? `/profile/${username}` : `/profile/${m.user_id}`
-                      const label = roleLabel(m.role)
+                    {/* ИСПРАВЛЕННАЯ СЕТКА - убираем перекрытие */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {(showAllMembers ? members : members.slice(0, 12)).map((m, idx) => {
+                        console.log('Rendering member:', idx, m)
+                        const username = m.profile?.username || ''
+                        const profileHref = username ? `/profile/${username}` : `/profile/${m.user_id}`
+                        const label = roleLabel(m.role)
 
-                      return (
-                        <motion.a
-                          key={idx}
-                          href={profileHref}
-                          initial={{ opacity: 0, scale: 0.8 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          transition={{ delay: idx * 0.05 }}
-                          whileHover={{ scale: 1.05, y: -5 }}
-                          className="text-center group cursor-pointer block"
-                        >
-                          <div
-                            className={`mx-auto h-16 w-16 overflow-hidden rounded-xl mb-2 ring-2 transition-all group-hover:ring-4 ${
+                        return (
+                          <motion.a
+                            key={`member-${m.user_id}-${idx}`} // уникальный ключ
+                            href={profileHref}
+                            initial={{ opacity: 0, scale: 0.8 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ delay: idx * 0.05 }}
+                            whileHover={{ scale: 1.05, y: -5 }}
+                            className="flex flex-col items-center text-center group cursor-pointer p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-all"
+                          >
+                            {/* Аватар с фиксированными размерами */}
+                            <div
+                              className={`w-16 h-16 overflow-hidden rounded-xl mb-2 ring-2 transition-all group-hover:ring-4 flex-shrink-0 ${
+                                theme === 'light'
+                                  ? 'bg-slate-200 ring-slate-300 group-hover:ring-blue-300'
+                                  : 'bg-slate-700 ring-slate-600 group-hover:ring-blue-500'
+                              }`}
+                            >
+                              {m.profile?.avatar_url ? (
+                                <img
+                                  src={m.profile.avatar_url}
+                                  alt={`${username} avatar`}
+                                  className="h-full w-full object-cover"
+                                  loading="lazy"
+                                  onError={(e) => { 
+                                    (e.currentTarget as HTMLImageElement).src = '/avatar-placeholder.png' 
+                                  }}
+                                />
+                              ) : (
+                                <div className="h-full w-full flex items-center justify-center text-2xl">
+                                  👤
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Имя пользователя */}
+                            <div className={`text-[13px] font-medium ${textClass} mb-1 break-words max-w-full`}>
+                              {username || '—'}
+                            </div>
+                            
+                            {/* Роль */}
+                            {label && (
+                              <div className={`text-[11px] font-medium px-2 py-1 rounded-full border text-center min-w-0 ${
+                                theme === 'light' ? getRoleColor(m.role) : getRoleColorDark(m.role)
+                              }`}>
+                                {label}
+                              </div>
+                            )}
+                          </motion.a>
+                        )
+                      })}
+                      
+                      {/* Кнопка "показать еще" */}
+                      {members.length > 12 && !showAllMembers && (
+                        <div className="flex flex-col items-center text-center p-2">
+                          <motion.button
+                            onClick={() => setShowAllMembers(true)}
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            className={`w-16 h-16 rounded-xl border-2 border-dashed flex items-center justify-center text-lg transition-colors ${
                               theme === 'light'
-                                ? 'bg-slate-200 ring-slate-300 group-hover:ring-blue-300'
-                                : 'bg-slate-700 ring-slate-600 group-hover:ring-blue-500'
+                                ? 'border-gray-300 text-gray-400 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50'
+                                : 'border-slate-600 text-slate-500 hover:border-blue-500 hover:text-blue-400 hover:bg-blue-900/20'
                             }`}
                           >
-                            {m.profile?.avatar_url ? (
-                              <img
-                                src={m.profile.avatar_url}
-                                alt="avatar"
-                                className="h-full w-full object-cover"
-                                loading="lazy"
-                                onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/avatar-placeholder.png' }}
-                              />
-                            ) : (
-                              <div className="h-full w-full flex items-center justify-center text-base sm:text-lg">👤</div>
-                            )}
+                            +{members.length - 12}
+                          </motion.button>
+                          <div className={`text-[11px] ${mutedTextClass} mt-2`}>
+                            Еще
                           </div>
-
-                          <div className={`truncate text-[12px] sm:text-[13px] font-medium ${textClass}`}>
-                            {m.profile?.username || '—'}
-                          </div>
-                          {label && <div className={`text-[10px] ${mutedTextClass}`}>{label}</div>}
-                        </motion.a>
-                      )
-                    })}
-                      {members.length > 12 && !showAllMembers && (
-                        <motion.button
-                          onClick={() => setShowAllMembers(true)}
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          className={`h-16 w-16 mx-auto rounded-xl border-2 border-dashed flex items-center justify-center text-xl ${
-                            theme === 'light'
-                              ? 'border-gray-300 text-gray-400 hover:border-blue-400 hover:text-blue-500'
-                              : 'border-slate-600 text-slate-500 hover:border-blue-500 hover:text-blue-400'
-                          }`}
-                        >
-                          +{members.length - 12}
-                        </motion.button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -1099,7 +1127,7 @@ export default function TeamPage(): JSX.Element {
             vk_enabled: !!(team as any).vk_url,
             vk_url: (team as any).vk_url ?? null,
             langs: team.langs ?? ['EN→RU'],
-            tags: team.tags ?? ['Манга', 'Новеллы', 'Другое'],
+            tags: team.tags ?? [],
             members: members.map((m) => ({
               username: m.profile?.username ?? '',
               role: m.role && m.role !== 'member' ? m.role : 'translator'
@@ -1109,7 +1137,7 @@ export default function TeamPage(): JSX.Element {
           onSave={async (v) => {
             try {
               console.log('Saving team data:', v)
-        
+          
               // Подготавливаем данные для отправки
               const payload: any = {
                 name: v.name.trim(),
@@ -1117,34 +1145,27 @@ export default function TeamPage(): JSX.Element {
                 hiring_text: v.hiring_enabled ? (v.hiring_text?.trim() || null) : null,
                 hiring_enabled: v.hiring_enabled,
                 langs: v.langs.length ? v.langs : ['EN→RU'],
-                tags: v.tags.length ? v.tags : ['Манга'],
+                tags: v.tags,
               }
-        
-              // Добавляем URL-поля только если они заполнены
+          
+              // Обязательные поля
               if (v.avatar_url.trim()) {
                 payload.avatar_url = v.avatar_url.trim()
               }
               if (v.banner_url?.trim()) {
                 payload.banner_url = v.banner_url.trim()
               }
-        
-              // Соцсети — добавляем только включенные
-              if (v.discord_enabled && v.discord_url?.trim()) {
-                payload.discord_url = v.discord_url.trim()
-              }
-              if (v.boosty_enabled && v.boosty_url?.trim()) {
-                payload.boosty_url = v.boosty_url.trim()
-              }
-              if (v.telegram_enabled && v.telegram_url?.trim()) {
-                payload.telegram_url = v.telegram_url.trim()
-              }
-              if (v.vk_enabled && v.vk_url?.trim()) {
-                payload.vk_url = v.vk_url.trim()
-              }
-        
+          
+              // ИСПРАВЛЕНО: всегда отправляем URL поля, даже если disabled
+              // Если enabled=false, отправляем null для очистки в БД
+              payload.discord_url = v.discord_enabled ? (v.discord_url?.trim() || null) : null
+              payload.boosty_url = v.boosty_enabled ? (v.boosty_url?.trim() || null) : null
+              payload.telegram_url = v.telegram_enabled ? (v.telegram_url?.trim() || null) : null
+              payload.vk_url = v.vk_enabled ? (v.vk_url?.trim() || null) : null
+          
               console.log('Final payload:', payload)
-        
-              // 1) Обновляем саму команду
+          
+              // Остальная логика остается без изменений...
               const rTeam = await fetch(`/api/teams/${encodeURIComponent(slug)}/edit`, {
                 method: 'PATCH',
                 headers: { 
@@ -1158,7 +1179,6 @@ export default function TeamPage(): JSX.Element {
                 const errorData = await rTeam.json().catch(() => ({}))
                 console.error('Team update failed:', errorData)
                 
-                // Понятное сообщение
                 let errorMessage = 'Не удалось обновить команду'
                 if (errorData.error === 'invalid_urls') {
                   errorMessage = 'Проверьте правильность введенных URL-адресов'
@@ -1171,14 +1191,14 @@ export default function TeamPage(): JSX.Element {
                 }
                 throw new Error(errorMessage)
               }
-        
+          
               const teamResult = await rTeam.json()
               console.log('Team update result:', teamResult)
-        
-              // 2) Синхронизируем участников (только если есть изменения)
+          
+              // Обновляем участников (если есть изменения)
               if (v.members && v.members.length > 0) {
                 console.log('Updating members:', v.members)
-        
+          
                 const rMembers = await fetch(`/api/teams/${encodeURIComponent(slug)}/members`, {
                   method: 'POST',
                   headers: { 
@@ -1187,12 +1207,11 @@ export default function TeamPage(): JSX.Element {
                   },
                   body: JSON.stringify({ members: v.members }),
                 })
-        
+          
                 if (rMembers.ok) {
                   const membersResult = await rMembers.json()
                   console.log('Members update result:', membersResult)
                   
-                  // Обновляем участников в состоянии
                   if (Array.isArray(membersResult?.items)) {
                     setMembers(membersResult.items)
                   }
@@ -1200,8 +1219,8 @@ export default function TeamPage(): JSX.Element {
                   console.warn('Members update failed, but team data was saved')
                 }
               }
-        
-              // Обновляем данные команды в состоянии (сохраняем актуальные счетчики)
+          
+              // Обновляем состояние команды
               setTeam(prevTeam => prevTeam ? { 
                 ...prevTeam, 
                 ...teamResult.team,
@@ -1210,7 +1229,7 @@ export default function TeamPage(): JSX.Element {
               } : prevTeam)
               
               setIsEditOpen(false)
-              console.log('✅ Команда успешно обновлена!')
+              console.log('Команда успешно обновлена!')
               
             } catch (e) {
               const msg = e instanceof Error ? e.message : typeof e === 'string' ? e : 'Неизвестная ошибка'
@@ -1638,11 +1657,38 @@ function roleLabel(role?: string | null) {
     case 'editor':      return 'Редактор'
     case 'translator':  return 'Переводчик'
     case 'typesetter':  return 'Тайпсеттер'
-    case 'member':      return ''          // ← не показываем «Участник»
-    default:            return ''          // ← по умолчанию тоже не показываем
+    case 'member':      return 'Участник'
+    default:            return null // возвращаем null если роль неизвестна
   }
 }
 
+// НОВАЯ ФУНКЦИЯ: цвета для ролей (спокойные, не яркие)
+function getRoleColor(role?: string | null) {
+  const r = String(role || '').toLowerCase()
+  switch (r) {
+    case 'lead':
+    case 'leader':      return 'bg-amber-100 text-amber-700 border-amber-200' // золотистый
+    case 'editor':      return 'bg-blue-100 text-blue-700 border-blue-200'    // голубой
+    case 'translator':  return 'bg-green-100 text-green-700 border-green-200' // зеленый
+    case 'typesetter':  return 'bg-purple-100 text-purple-700 border-purple-200' // фиолетовый
+    case 'member':      return 'bg-gray-100 text-gray-600 border-gray-200'    // серый
+    default:            return 'bg-slate-100 text-slate-600 border-slate-200' // дефолт
+  }
+}
+
+// Для темной темы
+function getRoleColorDark(role?: string | null) {
+  const r = String(role || '').toLowerCase()
+  switch (r) {
+    case 'lead':
+    case 'leader':      return 'bg-amber-900/30 text-amber-300 border-amber-700/50'
+    case 'editor':      return 'bg-blue-900/30 text-blue-300 border-blue-700/50'
+    case 'translator':  return 'bg-green-900/30 text-green-300 border-green-700/50'
+    case 'typesetter':  return 'bg-purple-900/30 text-purple-300 border-purple-700/50'
+    case 'member':      return 'bg-gray-700/30 text-gray-300 border-gray-600/50'
+    default:            return 'bg-slate-700/30 text-slate-300 border-slate-600/50'
+  }
+}
 
 function formatK(n: number) {
   if (n >= 1000) {
