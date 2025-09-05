@@ -665,7 +665,7 @@ export default function TeamPosts({
     if (!r) return 'Участник'
     return ROLE_LABEL[r] ?? r
   }
-  const getRoleColor = (role: string | null, theme: 'light' | 'dark') => {
+  const getRoleColor = (role: string | null) => { 
     const r = normalizeRole(role)
     if (r && ROLE_BADGE[r]) {
       return `${ROLE_BADGE[r][theme]} border font-medium`
@@ -1018,12 +1018,6 @@ const PostCard: React.FC<{
   const [editData, setEditData] = useState({ title: post.title || '', body: post.body || '' })
   const editBodyRef = useRef<HTMLTextAreaElement>(null)
 
-  const getPostTypeIcon = () => post.post_type === 'announcement'
-    ? <Megaphone className="w-4 h-4 text-amber-500" />
-    : <Type className="w-4 h-4 text-slate-500" />
-
-  const getPostTypeBorder = () => post.post_type === 'announcement' ? 'border-l-4 border-l-amber-500' : ''
-
   const isEditing = editingPost === post.id
   const canEdit = isLeader || (user?.id === post.author_id && index < 4)
 
@@ -1054,50 +1048,9 @@ const PostCard: React.FC<{
     }, 0)
   }
 
-  // дерево реплаев
-  const rootComments = comments.filter(c => !c.parent_id)
-  const childrenMap = useMemo(() => {
-    const m = new Map<string, JoinedComment[]>()
-    for (const c of comments) {
-      if (c.parent_id) {
-        const list = m.get(c.parent_id) ?? []
-        list.push(c)
-        m.set(c.parent_id, list)
-      }
-    }
-    return m
-  }, [comments])
-
-  const renderReplies = (parentId: string) => {
-    const items = childrenMap.get(parentId) ?? []
-    if (!items.length) return null
-    return (
-      <div className="mt-2 space-y-2">
-        {items.map((rc) => (
-          <div key={rc.id} className="pl-4 border-l border-slate-300/30">
-            <CommentBubble
-              c={rc}
-              theme={theme}
-              textMain={textMain}
-              textMuted={textMuted}
-              formatText={formatText}
-              getRoleColor={getRoleColor}
-              getRoleLabel={getRoleLabel}
-              onReply={() => setReplyToId(rc.id)}
-              canModerate={isLeader || (currentUserId === rc.user_id)}
-              onEdit={(newText) => onUpdateComment(rc.id, newText)}
-              onDelete={() => onDeleteComment(rc.id)}
-            />
-            {renderReplies(rc.id)}
-          </div>
-        ))}
-      </div>
-    )
-  }
-
   return (
     <motion.article initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-      className={`rounded-2xl border ${cardBg} ${getPostTypeBorder()} overflow-hidden shadow-sm`}
+      className={`rounded-2xl border ${cardBg} ${post.post_type === 'announcement' ? 'border-l-4 border-l-amber-500' : ''} overflow-hidden shadow-sm`}
     >
       <div className="p-5">
         {/* заголовок */}
@@ -1400,9 +1353,9 @@ const CommentBubble: React.FC<{
           <div className="flex items-center gap-2 mb-1">
             <span className={`text-sm font-medium ${textMain}`}>{c.username || 'Аноним'}</span>
             {c.team_role && (
-              <span className={`px-2 py-0.5 rounded-full text-xs ${getRoleColor(post.author_role, theme)}`}>
-                {getRoleLabel(post.author_role)}
-            </span>
+              <span className={`px-2 py-0.5 rounded-full text-xs ${getRoleColor(c.team_role)}`}>
+                {getRoleLabel(c.team_role)}
+              </span>
             )}
             <time className={`text-xs ${textMuted}`}>{new Date(c.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</time>
 
