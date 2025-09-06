@@ -36,6 +36,7 @@ export async function GET(req: NextRequest, { params }: Params) {
       viewer_liked: boolean
       author_username: string | null
       author_avatar_url: string | null
+      author_role: string | null
     }>(
       `
       with base as (
@@ -62,15 +63,38 @@ export async function GET(req: NextRequest, { params }: Params) {
       )
       select
         b.*,
-        case when $4::uuid is not null and exists(
-          select 1 from team_post_likes l
-          where l.post_id = b.id::uuid and l.user_id = $4::uuid and l.is_like = true
-        ) then true else false end as viewer_liked,
-        pr.username as author_username,
-        pr.avatar_url as author_avatar_url
+        case
+          when $4::uuid is not null and exists(
+            select 1
+            from team_post_likes l
+            where l.post_id = b.id::uuid
+              and l.user_id = $4::uuid
+              and l.is_like = true
+          )
+          then true
+          else false
+        end as viewer_liked,
+
+        pr.username       as author_username,
+        pr.avatar_url     as author_avatar_url,
+
+        case
+          when b.author_id::uuid = (
+            select created_by
+            from translator_teams
+            where id = $1
+          ) then 'leader'
+          -- иначе берём из таблицы участников
+          when tm.role is not null then tm.role
+          else null
+        end as author_role
+
       from base b
-      left join profiles pr on pr.id = b.author_id::uuid
-      `,
+      left join profiles pr
+        on pr.id = b.author_id::uuid
+      left join translator_team_members tm
+        on tm.team_id = $1 and tm.user_id = b.author_id::uuid
+          `,
       [team.id, limit, offset, uid]
     )
 
@@ -78,6 +102,7 @@ export async function GET(req: NextRequest, { params }: Params) {
     const items = r.rows.map((row) => ({
       id: row.id,
       teamId: parseInt(row.team_id), // Конвертируем обратно в число для фронта
+      author_role: row.author_role,
       author: { 
         id: row.author_id, 
         username: row.author_username, 
@@ -121,8 +146,15 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!member.rowCount) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const payload = await req.json().catch(() => ({} as any))
-    
-    const body = String(payload?.body ?? payload?.content ?? '').trim()
+
+    // 🔹 очистка текста
+    const clean = (s: string) => s
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/[ \t]{2,}/g, ' ')
+      .trim()
+
+    const rawBody = String(payload?.body ?? payload?.content ?? '')
+    const body = clean(rawBody)
     if (!body) return NextResponse.json({ error: 'Empty body' }, { status: 400 })
 
     const title = payload?.title ? String(payload.title).slice(0, 256) : null

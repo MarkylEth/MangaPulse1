@@ -1551,7 +1551,12 @@ const EditModal: React.FC<EditModalProps> = ({ initial, onClose, onSave }) => {
               <button
                 type="button"
                 onClick={addMember}
-                className="mt-3 inline-flex items-center gap-2 rounded-2xl border px-3 py-2.5 text-[14px] hover:bg-slate-50 dark:hover:bg-slate-700/40"
+                className={[
+                  "mt-3 inline-flex items-center gap-2 rounded-2xl border px-3 py-2.5 text-[14px] transition-colors",
+                  theme === "light"
+                    ? "border-slate-200 text-slate-700 hover:bg-slate-50"
+                    : "border-slate-600 text-slate-200 hover:bg-slate-700/40"
+                ].join(" ")}
               >
                 <Plus className="w-4 h-4" />
                 Добавить участника
@@ -1559,13 +1564,18 @@ const EditModal: React.FC<EditModalProps> = ({ initial, onClose, onSave }) => {
             </div>
 
             <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => !saving && onClose()}
-                className="rounded-2xl border px-4 py-2.5 text-[14px] hover:bg-slate-50 dark:hover:bg-slate-700/40"
-              >
-                Отмена
-              </button>
+            <button
+              type="button"
+              onClick={() => !saving && onClose()}
+              className={[
+                "rounded-2xl border px-4 py-2.5 text-[14px] transition-colors",
+                theme === "light"
+                  ? "border-slate-200 text-slate-700 hover:bg-slate-50"
+                  : "border-slate-600 text-slate-200 hover:bg-slate-700/40"
+              ].join(" ")}
+            >
+              Отмена
+            </button>
               <button
                 type="submit"
                 disabled={saving}

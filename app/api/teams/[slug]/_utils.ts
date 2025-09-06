@@ -136,11 +136,17 @@ export async function canPinPosts(teamId: number, userId: string): Promise<boole
 /** Проверить, подписан ли пользователь на команду */
 export async function isUserFollowingTeam(teamId: number, userId: string): Promise<boolean> {
   try {
-    const r = await query(
-      'SELECT 1 FROM team_followers WHERE team_id = $1 AND user_id = $2::uuid LIMIT 1',
+    console.log('Checking follow status for user:', userId, 'team:', teamId)
+    
+    const r = await query<{ exists: boolean }>(
+      'SELECT exists(SELECT 1 FROM team_followers WHERE team_id = $1 AND user_id = $2::uuid) as exists',
       [teamId, userId]
     )
-    return (r?.rowCount ?? 0) > 0
+    
+    const isFollowing = r.rows[0]?.exists ?? false
+    console.log('Follow check result:', isFollowing)
+    
+    return isFollowing
   } catch (e) {
     console.error('Error checking follow status:', e)
     return false
@@ -149,8 +155,13 @@ export async function isUserFollowingTeam(teamId: number, userId: string): Promi
 
 /** Получить команду с дополнительными данными пользователя */
 export async function getTeamWithUserData(slug: string, userId: string | null) {
+  console.log('getTeamWithUserData called with:', { slug, userId })
+  
   const team = await resolveTeamBySlug(slug)
-  if (!team) return null
+  if (!team) {
+    console.log('Team not found for slug:', slug)
+    return null
+  }
 
   // Подсчет подписчиков из team_followers
   const followersRes = await query<{ cnt: number }>(
@@ -173,17 +184,31 @@ export async function getTeamWithUserData(slug: string, userId: string | null) {
   let can_pin = false
 
   if (userId) {
+    console.log('Checking user data for:', userId, 'team:', team.id)
+    
     // Проверяем подписку
     i_follow = await isUserFollowingTeam(team.id, userId)
+    console.log('User follow status:', i_follow)
 
     // Получаем роль и права
     user_role = await getMemberRole(team.id, userId)
     can_post = await canCreatePosts(team.id, userId)
     can_edit = await isTeamEditor(team.id, userId)
     can_pin = await canPinPosts(team.id, userId)
+    
+    console.log('User permissions:', { user_role, can_post, can_edit, can_pin })
   }
 
-  return {
+  // Обновляем счетчик подписчиков в основной таблице, если он отличается
+  if (team.followers_count !== followers_count) {
+    console.log('Updating followers count in main table:', followers_count)
+    await query(
+      'UPDATE translator_teams SET followers_count = $1, updated_at = now() WHERE id = $2',
+      [followers_count, team.id]
+    )
+  }
+
+  const result = {
     ...team,
     followers_count,
     members_count,
@@ -193,6 +218,15 @@ export async function getTeamWithUserData(slug: string, userId: string | null) {
     can_edit,
     can_pin,
   }
+
+  console.log('Final team data:', {
+    id: result.id,
+    name: result.name,
+    i_follow: result.i_follow,
+    followers_count: result.followers_count
+  })
+
+  return result
 }
 
 // Совместимость

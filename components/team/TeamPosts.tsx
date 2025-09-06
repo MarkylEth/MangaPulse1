@@ -189,6 +189,23 @@ export default function TeamPosts({
     images: [],
     featured_image: null
   })
+  // === подтверждение удаления ===
+  const [confirmDelete, setConfirmDelete] = useState<{
+    id: string
+    title?: string | null
+    isPinned?: boolean
+    busy?: boolean
+  } | null>(null)
+
+  function askDelete(postId: string) {
+    const p = posts.find(x => x.id === postId)
+    setConfirmDelete({
+      id: postId,
+      title: p?.title ?? null,
+      isPinned: !!p?.is_pinned,
+      busy: false
+    })
+  }
 
   // комментарии
   const [commentsOpenFor, setCommentsOpenFor] = useState<Record<string, boolean>>({})
@@ -226,6 +243,14 @@ export default function TeamPosts({
       .then((r) => setMyRole(normalizeRole((r as any)?.role ?? null)))
       .catch(() => setMyRole(null))
   }, [teamId, teamSlug, user?.id])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setConfirmDelete(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])  
 
   /* ===== загрузка постов ===== */
   async function load({ soft = false }: { soft?: boolean } = {}) {
@@ -336,63 +361,77 @@ export default function TeamPosts({
     }
   }
 
-  /* ===== обновить пост (оставил как есть; если PATCH не реализован на API — покажет алерт) ===== */
+  // === заменить всю функцию updatePost на это ===
   async function updatePost(postId: string, updatedData: Partial<Post>) {
     try {
       if (updatedData.body && (updatedData.body as string).length > 1000) {
         return alert('Максимум 1000 символов в посте')
       }
-
+  
       const target = posts.find(p => p.id === postId)
-      const isLeader = normalizeRole(myRole) === 'leader'
       if (!target) return
-      const idx = posts.findIndex(p => p.id === postId)
-      const isInTop4 = idx > -1 && idx < 4
-      if (!isLeader) {
-        const isOwn = target.author_id === user?.id
-        if (!isOwn || !isInTop4) {
-          return alert('Редактировать можно только свои посты из первых 4')
-        }
+  
+      // Редактировать может только автор
+      const isOwn = target.author_id === user?.id
+      if (!isOwn) {
+        return alert('Редактировать можно только свои посты')
       }
-
-      // если на бэке нет PATCH — вернётся 404
+  
       await api<{ ok: true }>(
         `/api/teams/${encodeURIComponent(teamSlug)}/posts/${encodeURIComponent(postId)}`,
         { method: 'PATCH', userId: user?.id || null, body: JSON.stringify(updatedData) }
       )
-
+  
       setPosts(prev => prev.map(p => (p.id === postId ? { ...p, ...updatedData } : p)))
       setEditingPost(null)
     } catch (e: any) {
       console.error('[updatePost] error', e)
       alert('Не удалось обновить пост')
     }
-  }
+  }  
 
-  /* ===== удалить пост ===== */
+  // === заменить всю функцию deletePost на это ===
   async function deletePost(postId: string) {
-    if (!confirm('Удалить пост?')) return
     try {
       const target = posts.find(p => p.id === postId)
       if (!target) return
+  
       const isLeaderHere = normalizeRole(myRole) === 'leader'
       const isOwn = target.author_id === user?.id
-      if (!isLeaderHere && !isOwn) {
-        alert('Удалять можно только свои посты')
-        return
+  
+      if (isLeaderHere) {
+        // Лидер: можно удалять только последние 4 незакреплённых
+        const nonPinned = posts.filter(p => !p.is_pinned)
+        const idx = nonPinned.findIndex(p => p.id === postId)
+        const isInTop4 = idx > -1 && idx < 4
+        if (!isInTop4) {
+          alert('Лидер может удалять только последние 4 поста в ленте')
+          return
+        }
+      } else {
+        // Не лидер: только свои
+        if (!isOwn) {
+          alert('Удалять можно только свои посты')
+          return
+        }
       }
-
+  
+      // показать спиннер на кнопке модалки
+      setConfirmDelete(prev => prev ? { ...prev, busy: true } : prev)
+  
       await api<{ ok: true }>(
         `/api/teams/${encodeURIComponent(teamSlug)}/posts/${encodeURIComponent(postId)}`,
         { method: 'DELETE', userId: user?.id || null }
       )
-
+  
       setPosts(prev => prev.filter(p => p.id !== postId))
+      setConfirmDelete(null)
     } catch (e) {
       console.error('[deletePost] error', e)
       alert('Не удалось удалить пост')
+      setConfirmDelete(null)
     }
-  }
+  }  
 
   /* ===== лайки (оптимистично) ===== */
   async function toggleLike(postId: string) {
@@ -440,21 +479,49 @@ export default function TeamPosts({
 
   /* ===== закреп (наш эндпоинт /pin) ===== */
   const isLeader = normalizeRole(myRole) === 'leader'
+
   async function pinPost(postId: string) {
     if (!isLeader) return
+    const alreadyPinned = posts.find(p => p.id === postId && p.is_pinned)
+    if (alreadyPinned) return
+    const prevPinned = posts.find(p => p.is_pinned)
+
+    setPosts(prev => prev.map(p =>
+      p.id === postId ? { ...p, is_pinned: true }
+      : prevPinned && p.id === prevPinned.id ? { ...p, is_pinned: false }
+      : p
+    ))
+
     try {
+      if (prevPinned) {
+        await api<{ ok: true }>(
+          `/api/teams/${encodeURIComponent(teamSlug)}/posts/${encodeURIComponent(prevPinned.id)}/pin`,
+          { method: 'PATCH', userId: user?.id || null, body: JSON.stringify({ pinned: false }) }
+        )
+      }
+
       await api<{ ok: true }>(
         `/api/teams/${encodeURIComponent(teamSlug)}/posts/${encodeURIComponent(postId)}/pin`,
         { method: 'PATCH', userId: user?.id || null, body: JSON.stringify({ pinned: true }) }
       )
+
       await load({ soft: true })
     } catch (e) {
+      setPosts(prev => prev.map(p =>
+        p.id === postId ? { ...p, is_pinned: false }
+        : prevPinned && p.id === prevPinned.id ? { ...p, is_pinned: true }
+        : p
+      ))
       console.error('[pinPost] error', e)
       alert('Не удалось закрепить пост')
     }
   }
+
   async function unpinPost(postId: string) {
     if (!isLeader) return
+
+    setPosts(prev => prev.map(p => p.id === postId ? { ...p, is_pinned: false } : p))
+
     try {
       await api<{ ok: true }>(
         `/api/teams/${encodeURIComponent(teamSlug)}/posts/${encodeURIComponent(postId)}/pin`,
@@ -462,6 +529,7 @@ export default function TeamPosts({
       )
       await load({ soft: true })
     } catch (e) {
+      setPosts(prev => prev.map(p => p.id === postId ? { ...p, is_pinned: true } : p))
       console.error('[unpinPost] error', e)
       alert('Не удалось открепить пост')
     }
@@ -674,11 +742,16 @@ export default function TeamPosts({
       ? 'bg-gray-100 text-gray-600 border-gray-200 border font-medium'
       : 'bg-gray-700/30 text-gray-300 border-gray-600/50 border font-medium'
   }
-  const formatText = (text: string) =>
-    text
+  const formatText = (text: string) => {
+    const cleaned = text
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/[ \t]{2,}/g, ' ')
+  
+    return cleaned
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
       .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>')
       .replace(/__(.*?)__/g, '<u>$1</u>')
+  }
 
   /* ===== разбиение / пагинация ===== */
   const pinned = posts.find(p => p.is_pinned)
@@ -704,110 +777,185 @@ export default function TeamPosts({
             {isComposerOpen && (
               <motion.div
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm grid place-items-center p-4"
+                className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md grid place-items-center p-4"
               >
-                <motion.div
+                <motion.div 
                   initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }}
-                  className={`w-[min(720px,92vw)] max-h-[90vh] overflow-y-auto rounded-2xl border ${cardBg} p-5`}
+                  className="w-[min(720px,92vw)] max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-slate-800 shadow-2xl border border-slate-200 dark:border-slate-700"
+                  style={{
+                    background: theme === 'light' 
+                      ? 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)' 
+                      : 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)'
+                  }}
                 >
-                  <div className="flex items-center justify-between mb-4">
-                    <div className={`text-lg font-semibold ${textMain}`}>Новый пост</div>
+                  
+                  {/* Header */}
+                  <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                        <Type className="w-5 h-5 text-white" />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+                          Создать пост
+                        </h2>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">
+                          Поделитесь своими мыслями с сообществом
+                        </p>
+                      </div>
+                    </div>
                     <button
-                      className={`rounded-lg p-2 transition ${theme === 'light' ? 'hover:bg-slate-100' : 'hover:bg-slate-700/40'}`}
+                      className="w-10 h-10 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all duration-200"
                       onClick={() => setIsComposerOpen(false)}
                     >
-                      <X className="w-5 h-5" />
+                      <X className="w-5 h-5 mx-auto" />
                     </button>
                   </div>
 
-                  <PostTypeSelector />
+                  {/* Content */}
+                  <div className="p-6 space-y-6">
+                    <PostTypeSelector />
 
-                  <div className="space-y-3">
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className={`text-sm font-medium ${textMuted}`}>Заголовок</span>
-                        <div className="flex gap-1">
+                    {/* Title Field - СОХРАНИТЕ ВСЮ ЛОГИКУ */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                          Заголовок
+                        </label>
+                        <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-700 rounded-lg">
                           <button type="button" onClick={() => insertFormatting('title', 'bold', titleRef as any)}
-                            className={`p-1 rounded text-xs transition ${theme === 'light' ? 'hover:bg-slate-200' : 'hover:bg-slate-600'}`} title="Жирный">
-                            <Bold className="w-3 h-3" />
+                            className="p-2 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all duration-200"
+                            title="Жирный">
+                            <Bold className="w-4 h-4" />
                           </button>
                           <button type="button" onClick={() => insertFormatting('title', 'italic', titleRef as any)}
-                            className={`p-1 rounded text-xs transition ${theme === 'light' ? 'hover:bg-slate-200' : 'hover:bg-slate-600'}`} title="Курсив">
-                            <Italic className="w-3 h-3" />
+                            className="p-2 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all duration-200"
+                            title="Курсив">
+                            <Italic className="w-4 h-4" />
                           </button>
                           <button type="button" onClick={() => insertFormatting('title', 'underline', titleRef as any)}
-                            className={`p-1 rounded text-xs transition ${theme === 'light' ? 'hover:bg-slate-200' : 'hover:bg-slate-600'}`} title="Подчёркнутый">
-                            <Underline className="w-3 h-3" />
+                            className="p-2 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all duration-200"
+                            title="Подчёркнутый">
+                            <Underline className="w-4 h-4" />
                           </button>
                         </div>
                       </div>
                       <input
                         ref={titleRef}
-                        className={`w-full rounded-xl border px-3 py-2 text-sm outline-none ${theme === 'light' ? 'bg-white border-slate-300' : 'bg-slate-700/50 border-slate-600'} ${textMain}`}
-                        placeholder="Заголовок (необязательно)"
+                        maxLength={120}
+                        className="w-full rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-4 py-3 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all duration-200"
+                        placeholder="Придумайте привлекательный заголовок..."
                         value={draft.title}
                         onChange={e => setDraft(d => ({ ...d, title: e.target.value }))}
                       />
                     </div>
 
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className={`text-sm font-medium ${textMuted}`}>Текст поста</span>
-                        <div className="flex gap-1">
+                    {/* Body Field - СОХРАНИТЕ ВСЮ ЛОГИКУ */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                          Текст поста
+                        </label>
+                        <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-700 rounded-lg">
                           <button type="button" onClick={() => insertFormatting('body', 'bold', bodyRef)}
-                            className={`p-1 rounded text-xs transition ${theme === 'light' ? 'hover:bg-slate-200' : 'hover:bg-slate-600'}`} title="Жирный (**текст**)">
-                            <Bold className="w-3 h-3" />
+                            className="p-2 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all duration-200"
+                            title="Жирный (**текст**)">
+                            <Bold className="w-4 h-4" />
                           </button>
                           <button type="button" onClick={() => insertFormatting('body', 'italic', bodyRef)}
-                            className={`p-1 rounded text-xs transition ${theme === 'light' ? 'hover:bg-slate-200' : 'hover:bg-slate-600'}`} title="Курсив (*текст*)">
-                            <Italic className="w-3 h-3" />
+                            className="p-2 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all duration-200"
+                            title="Курсив (*текст*)">
+                            <Italic className="w-4 h-4" />
                           </button>
                           <button type="button" onClick={() => insertFormatting('body', 'underline', bodyRef)}
-                            className={`p-1 rounded text-xs transition ${theme === 'light' ? 'hover:bg-slate-200' : 'hover:bg-slate-600'}`} title="Подчёркнутый (__текст__)">
-                            <Underline className="w-3 h-3" />
+                            className="p-2 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all duration-200"
+                            title="Подчёркнутый (__текст__)">
+                            <Underline className="w-4 h-4" />
                           </button>
                         </div>
                       </div>
                       <div className="relative">
                         <textarea
                           ref={bodyRef}
-                          className={`w-full h-32 rounded-xl border px-3 py-2 text-sm outline-none resize-y ${theme === 'light' ? 'bg-white border-slate-300' : 'bg-slate-700/50 border-slate-600'} ${textMain}`}
-                          placeholder={draft.post_type === 'announcement' ? 'Текст объявления...' : 'Текст поста...'}
+                          className="w-full h-32 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 px-4 py-3 text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none resize-y transition-all duration-200"
+                          placeholder={draft.post_type === 'announcement' ? 'Расскажите о важном событии...' : 'О чём хотите рассказать?'}
                           value={draft.body}
                           onChange={e => setDraft(d => ({ ...d, body: e.target.value }))}
                           maxLength={1000}
                         />
-                        <div className={`absolute bottom-2 right-2 text-xs ${textMuted}`}>{draft.body.length}/1000</div>
+                        <div className="absolute bottom-3 right-3 px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded-lg text-xs text-slate-500 dark:text-slate-400">
+                          {draft.body.length}/1000
+                        </div>
                       </div>
                     </div>
 
-                    <div className={`text-xs ${textMuted} bg-slate-100 dark:bg-slate-700/30 rounded-lg p-2`}>
-                      <div className="font-medium mb-1">Форматирование текста:</div>
-                      <div>**жирный** • *курсив* • __подчеркнутый__</div>
+                    {/* Formatting Help */}
+                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
+                          <Type className="w-3 h-3 text-white" />
+                        </div>
+                        <span className="text-sm font-medium text-blue-800 dark:text-blue-300">
+                          Форматирование текста
+                        </span>
+                      </div>
+                      <div className="text-sm text-blue-700 dark:text-blue-400">
+                        <code className="bg-blue-100 dark:bg-blue-800 px-1 py-0.5 rounded text-xs">**жирный**</code>{' '}
+                        <code className="bg-blue-100 dark:bg-blue-800 px-1 py-0.5 rounded text-xs">*курсив*</code>{' '}
+                        <code className="bg-blue-100 dark:bg-blue-800 px-1 py-0.5 rounded text-xs">__подчеркнутый__</code>
+                      </div>
                     </div>
 
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className={`text-sm font-medium ${textMuted}`}>Изображения</span>
-                        <button type="button" onClick={addImageToPost}
-                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-600 text-white text-xs hover:bg-blue-700">
-                          <Plus className="w-3 h-3" /> Добавить
+                    {/* Images Section - СОХРАНИТЕ ВСЮ ЛОГИКУ */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                          Изображения
+                        </label>
+                        <button
+                          type="button"
+                          onClick={addImageToPost}
+                          className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white text-sm font-medium rounded-xl hover:from-blue-600 hover:to-purple-700 transition-all duration-200 shadow-lg hover:shadow-xl"
+                        >
+                          <Plus className="w-4 h-4" />
+                          Добавить фото
                         </button>
                       </div>
 
-                      {draft.images.length > 0 && (
-                        <div className="grid grid-cols-2 gap-2 mb-2">
+                      {draft.images.length === 0 ? (
+                        <div 
+                          className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-all duration-200"
+                          onClick={addImageToPost}
+                        >
+                          <div className="w-8 h-8 text-slate-400 mx-auto mb-3">📷</div>
+                          <p className="text-slate-600 dark:text-slate-400 font-medium mb-1">
+                            Добавьте изображения к посту
+                          </p>
+                          <p className="text-sm text-slate-500 dark:text-slate-500">
+                            Нажмите или перетащите файлы сюда
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                           {draft.images.map((url, index) => (
                             <div key={index} className="relative group">
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={url} alt={`Изображение ${index + 1}`} className="w-full h-24 object-cover rounded-lg border"
-                                   onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/placeholder-image.png' }} />
-                              <button type="button" onClick={() => removeImage(index)}
-                                className="absolute top-1 right-1 w-6 h-6 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition">
+                              <img 
+                                src={url} 
+                                alt={`Изображение ${index + 1}`} 
+                                className="w-full h-24 object-cover rounded-xl border border-slate-200 dark:border-slate-600" 
+                                onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/placeholder-image.png' }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => removeImage(index)}
+                                className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-red-600 shadow-lg"
+                              >
                                 <X className="w-3 h-3 mx-auto" />
                               </button>
                               {draft.featured_image === url && (
-                                <div className="absolute bottom-1 left-1 px-1 py-0.5 bg-blue-600 text-white text-xs rounded">Главное</div>
+                                <div className="absolute bottom-2 left-2 px-2 py-1 bg-gradient-to-r from-blue-500 to-purple-600 text-white text-xs rounded-lg font-medium shadow-lg">
+                                  Главное
+                                </div>
                               )}
                             </div>
                           ))}
@@ -816,21 +964,41 @@ export default function TeamPosts({
                     </div>
                   </div>
 
-                  <div className="mt-4 flex items-center justify-end gap-2">
-                    <button
-                      className={`rounded-xl border px-4 py-2 text-sm transition ${theme === 'light' ? 'border-slate-300 hover:bg-slate-50' : 'border-slate-600 hover:bg-slate-700/50'}`}
-                      onClick={() => setIsComposerOpen(false)} disabled={posting}
-                    >
-                      Отмена
-                    </button>
-                    <button
-                      onClick={createPost} disabled={posting}
-                      className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 transition"
-                    >
-                      {posting && <Loader2 className="w-4 h-4 animate-spin" />}
-                      Опубликовать
-                    </button>
+                  {/* Footer - СОХРАНИТЕ ВСЮ ЛОГИКУ */}
+                  <div className="flex items-center justify-between p-6 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                    <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                      Автосохранение включено
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button
+                        className="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all duration-200"
+                        onClick={() => setIsComposerOpen(false)} 
+                        disabled={posting}
+                      >
+                        Отмена
+                      </button>
+                      <button
+                        onClick={createPost} 
+                        disabled={posting}
+                        className="inline-flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-medium rounded-xl hover:from-blue-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl"
+                      >
+                        {posting ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Публикуем...
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="w-4 h-4" />
+                            Опубликовать
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
+                  
+                  {/* НОВЫЙ ДИЗАЙН ЗАКАНЧИВАЕТСЯ ЗДЕСЬ */}
                 </motion.div>
               </motion.div>
             )}
@@ -865,7 +1033,7 @@ export default function TeamPosts({
               editingPost={editingPost}
               onToggleLike={() => toggleLike(pinned.id)}
               onOpenComments={() => openComments(pinned.id)}
-              onDelete={() => deletePost(pinned.id)}
+              onDelete={() => askDelete(pinned.id)}
               onUpdate={(data) => updatePost(pinned.id, data)}
               onOpenImageViewer={openImageViewer}
               commentsOpen={!!commentsOpenFor[pinned.id]}
@@ -879,7 +1047,6 @@ export default function TeamPosts({
               formatText={(t) => formatText(t)}
               onPin={() => pinPost(pinned.id)}
               onUnpin={() => unpinPost(pinned.id)}
-              // replies
               replyToId={replyTo[pinned.id] ?? null}
               setReplyToId={(cid: string | null) => setReplyTo(prev => ({ ...prev, [pinned.id]: cid }))}
               replyDraftMap={replyDraftMap}
@@ -906,7 +1073,7 @@ export default function TeamPosts({
               editingPost={editingPost}
               onToggleLike={() => toggleLike(post.id)}
               onOpenComments={() => openComments(post.id)}
-              onDelete={() => deletePost(post.id)}
+              onDelete={() => askDelete(post.id)}
               onUpdate={(data) => updatePost(post.id, data)}
               onOpenImageViewer={openImageViewer}
               commentsOpen={!!commentsOpenFor[post.id]}
@@ -963,6 +1130,58 @@ export default function TeamPosts({
           />
         )}
       </AnimatePresence>
+      <AnimatePresence>
+        {confirmDelete && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm grid place-items-center p-4"
+            onClick={() => !confirmDelete.busy && setConfirmDelete(null)}
+          >
+            <motion.div
+              initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }}
+              className={`w-[min(520px,92vw)] rounded-2xl border ${cardBg} shadow-2xl`}
+              onClick={(e) => e.stopPropagation()}
+              role="dialog" aria-modal="true" aria-labelledby="confirm-title"
+            >
+              <div className="p-6">
+                <h3 id="confirm-title" className={`text-lg font-semibold ${textMain} mb-1`}>
+                  Удалить пост?
+                </h3>
+
+                <p className={`${textMuted} text-sm`}>
+                  {confirmDelete.title
+                    ? <>«{confirmDelete.title}» будет удалён без возможности восстановления.</>
+                    : <>Пост будет удалён без возможности восстановления.</>}
+                </p>
+
+                {confirmDelete.isPinned && (
+                  <div className="mt-3 text-amber-600 dark:text-amber-300 text-sm">
+                    Внимание: это закреплённый пост.
+                  </div>
+                )}
+
+                <div className="mt-6 flex items-center justify-end gap-2">
+                  <button
+                    className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/50 disabled:opacity-50"
+                    onClick={() => setConfirmDelete(null)}
+                    disabled={confirmDelete.busy}
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                    onClick={() => deletePost(confirmDelete.id)}
+                    disabled={confirmDelete.busy}
+                  >
+                    {confirmDelete.busy && <Loader2 className="w-4 h-4 animate-spin" />}
+                    Удалить
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -995,7 +1214,6 @@ const PostCard: React.FC<{
   formatText: (text: string) => string
   onPin: () => void
   onUnpin: () => void
-  // replies
   replyToId: string | null
   setReplyToId: (id: string | null) => void
   replyDraftMap: Record<string, string>
@@ -1019,7 +1237,43 @@ const PostCard: React.FC<{
   const editBodyRef = useRef<HTMLTextAreaElement>(null)
 
   const isEditing = editingPost === post.id
-  const canEdit = isLeader || (user?.id === post.author_id && index < 4)
+    // === единые стили для иконок в шапке поста ===
+  const iconBtnBase =
+  'p-2 rounded-lg transition focus:outline-none focus:ring-2 focus:ring-blue-500/30';
+  const iconHoverBg = 'hover:bg-slate-100 dark:hover:bg-slate-700/50';
+  const iconTone = 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white';
+  const iconToneDanger = 'text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300';
+  const iconTonePinned = 'text-amber-600 dark:text-amber-300 hover:text-amber-700 dark:hover:text-amber-200';
+  const canEdit = user?.id === post.author_id
+  // Коллапс длинного текста
+  const [expanded, setExpanded] = useState(false)
+  const contentRef = useRef<HTMLDivElement | null>(null)
+  const [needsClamp, setNeedsClamp] = useState(false) // показывать градиент/кнопку только если реально обрезано
+
+  useEffect(() => {
+    if (!contentRef.current) return
+    const el = contentRef.current
+    // даём браузеру дорисовать DOM, затем меряем
+    const rAF = requestAnimationFrame(() => {
+      // el.clientHeight — видимая высота, el.scrollHeight — полная
+      setNeedsClamp(el.scrollHeight - el.clientHeight > 4) // небольшой зазор
+    })
+    return () => cancelAnimationFrame(rAF)
+  }, [post.body, post.title, expanded, theme])
+
+  useEffect(() => {
+    // пересчитываем при ресайзе окна
+    const onResize = () => {
+      if (!contentRef.current) return
+      const el = contentRef.current
+      setNeedsClamp(el.scrollHeight - el.clientHeight > 4)
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  // Порог, начиная с которого показываем кнопку «Показать полностью»
+  const shouldOfferExpand = (post.body?.length ?? 0) > 400
 
   const handleSaveEdit = () => {
     if (editData.body.length > 1000) return alert('Максимум 1000 символов в посте')
@@ -1070,14 +1324,22 @@ const PostCard: React.FC<{
                   </span>
                 )}
                 {post.is_pinned && (
-                  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500 text-white">Закреплён</span>
+                  <span
+                    className={[
+                      'px-2 py-0.5 rounded-full text-xs font-medium border',
+                      'bg-amber-100 text-amber-700 border-amber-200',
+                      'dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700/50'
+                    ].join(' ')}
+                  >
+                    Закреплён
+                  </span>
                 )}
-              </div>
+                              </div>
               <div className="flex items-center gap-2">
                 <time className={`text-xs ${textMuted}`}>
                   {new Date(post.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                 </time>
-                {post.post_type === 'announcement' ? <Megaphone className="w-4 h-4 text-amber-500" /> : <Type className="w-4 h-4 text-slate-500" />}
+                {post.post_type === 'announcement' ? <Megaphone className="w-4 h-4 text-amber-600 dark:text-amber-300" /> : <Type className="w-4 h-4 text-slate-500 dark:text-slate-400" /> }
               </div>
             </div>
           </div>
@@ -1085,24 +1347,45 @@ const PostCard: React.FC<{
           <div className="flex items-center gap-1">
             {isLeader && (
               post.is_pinned ? (
-                <button onClick={onUnpin} className={`p-2 rounded-lg transition ${theme === 'light' ? 'hover:bg-slate-100' : 'hover:bg-slate-700/50'}`} title="Открепить пост">
+                <button
+                  onClick={onUnpin}
+                  aria-label="Открепить пост"
+                  title="Открепить пост"
+                  className={`${iconBtnBase} ${iconHoverBg} ${iconTonePinned}`}
+                >
                   <Pin className="w-4 h-4 rotate-45" />
                 </button>
               ) : (
-                <button onClick={onPin} className={`p-2 rounded-lg transition ${theme === 'light' ? 'hover:bg-slate-100' : 'hover:bg-slate-700/50'}`} title="Закрепить пост (снимет прошлый)">
+                <button
+                  onClick={onPin}
+                  aria-label="Закрепить пост"
+                  title="Закрепить пост (снимет прошлый)"
+                  className={`${iconBtnBase} ${iconHoverBg} ${iconTone}`}
+                >
+                  {/* в не закреплённом состоянии нейтральный цвет; при hover пользователь увидит подсказку тоном */}
                   <Pin className="w-4 h-4" />
                 </button>
               )
             )}
-            {(isLeader || (user?.id === post.author_id && index < 4)) && (
-              <button onClick={() => setEditingPost(isEditing ? null : post.id)}
-                className={`p-2 rounded-lg transition ${theme === 'light' ? 'hover:bg-slate-100' : 'hover:bg-slate-700/50'}`} title="Редактировать">
+
+            {user?.id === post.author_id && (
+              <button
+                onClick={() => setEditingPost(isEditing ? null : post.id)}
+                aria-label="Редактировать пост"
+                title="Редактировать"
+                className={`${iconBtnBase} ${iconHoverBg} ${iconTone}`}
+              >
                 <Edit3 className="w-4 h-4" />
               </button>
             )}
+
             {(isLeader || user?.id === post.author_id) && (
-              <button onClick={onDelete}
-                className={`p-2 rounded-lg transition text-red-500 ${theme === 'light' ? 'hover:bg-red-50' : 'hover:bg-red-900/20'}`} title="Удалить">
+              <button
+                onClick={onDelete}
+                aria-label="Удалить пост"
+                title="Удалить"
+                className={`${iconBtnBase} ${iconHoverBg} ${iconToneDanger}`}
+              >
                 <Trash2 className="w-4 h-4" />
               </button>
             )}
@@ -1110,7 +1393,7 @@ const PostCard: React.FC<{
         </div>
 
         {/* контент */}
-        {editingPost === post.id ? (
+        {isEditing ? (
           <div className="space-y-3 mb-4">
             <input
               className={`w-full rounded-lg border px-3 py-2 text-sm ${theme === 'light' ? 'bg-white border-slate-300' : 'bg-slate-700/50 border-slate-600'} ${textMain}`}
@@ -1118,19 +1401,29 @@ const PostCard: React.FC<{
               value={editData.title}
               onChange={e => setEditData(prev => ({ ...prev, title: e.target.value }))}
             />
+            {/* тулбар форматирования (тёмная/светлая тема) */}
             <div className="flex gap-1 mb-2">
-              <button type="button" onClick={() => insertEditFormatting('bold')}
-                className={`p-1 rounded text-xs transition ${theme === 'light' ? 'hover:bg-slate-200' : 'hover:bg-slate-600'}`} title="Жирный (**текст**)">
-                <Bold className="w-3 h-3" />
-              </button>
-              <button type="button" onClick={() => insertEditFormatting('italic')}
-                className={`p-1 rounded text-xs transition ${theme === 'light' ? 'hover:bg-slate-200' : 'hover:bg-slate-600'}`} title="Курсив (*текст*)">
-                <Italic className="w-3 h-3" />
-              </button>
-              <button type="button" onClick={() => insertEditFormatting('underline')}
-                className={`p-1 rounded text-xs transition ${theme === 'light' ? 'hover:bg-slate-200' : 'hover:bg-slate-600'}`} title="Подчёркнутый (__текст__)">
-                <Underline className="w-3 h-3" />
-              </button>
+              {([
+                { k: 'bold',      Icon: Bold,      title: 'Жирный (**текст**)' },
+                { k: 'italic',    Icon: Italic,    title: 'Курсив (*текст*)' },
+                { k: 'underline', Icon: Underline, title: 'Подчёркнутый (__текст__)' },
+              ] as const).map(({ k, Icon, title }) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => insertEditFormatting(k)}
+                  title={title}
+                  className={[
+                    'p-2 rounded-md text-xs transition',
+                    'text-slate-600 dark:text-slate-300',
+                    'hover:text-slate-900 dark:hover:text-white',
+                    theme === 'light' ? 'hover:bg-slate-100' : 'hover:bg-slate-700/50',
+                    'focus:outline-none focus:ring-2 focus:ring-blue-500/30'
+                  ].join(' ')}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                </button>
+              ))}
             </div>
             <div className="relative">
               <textarea
@@ -1145,13 +1438,47 @@ const PostCard: React.FC<{
             <div className="flex gap-2">
               <button onClick={handleSaveEdit} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">Сохранить</button>
               <button onClick={() => setEditingPost(null)}
-                className={`px-3 py-1.5 rounded-lg text-sm border ${theme === 'light' ? 'border-slate-300 hover:bg-slate-50' : 'border-slate-600 hover:bg-slate-700/50'}`}>Отмена</button>
+                className={['px-3 py-1.5 rounded-lg text-sm border transition',
+                  theme === 'light'
+                    ? 'border-slate-300 text-slate-700 hover:bg-slate-50'
+                    : 'border-slate-600 text-slate-300 hover:bg-slate-700/50'
+                ].join(' ')}
+              >
+                Отмена
+              </button>
             </div>
           </div>
         ) : (
           <div className="mb-4">
-            {post.title && <h3 className={`text-lg font-semibold ${textMain} mb-2`} dangerouslySetInnerHTML={{ __html: formatText(post.title) }} />}
-            {post.body && <div className={`${textMain} leading-relaxed whitespace-pre-wrap`} dangerouslySetInnerHTML={{ __html: formatText(post.body) }} />}
+            {post.title && (
+              <h3
+                className={`text-lg font-semibold ${textMain} mb-2 break-words hyphens-auto`}
+                dangerouslySetInnerHTML={{ __html: formatText(post.title) }}
+              />
+            )}
+
+            {post.body && (
+              <div className="relative">
+                <div
+                  ref={contentRef}
+                  className={[
+                    `${textMain} leading-relaxed whitespace-pre-wrap break-words hyphens-auto`,
+                    expanded ? '' : 'max-h-[420px] overflow-hidden'
+                  ].join(' ')}
+                  dangerouslySetInnerHTML={{ __html: formatText(post.body) }}
+                />
+                {/* градиент показываем ТОЛЬКО если реально обрезано и не раскрыто */}
+                {(expanded || needsClamp) && (
+                  <button
+                    type="button"
+                    onClick={() => setExpanded(v => !v)}
+                    className="mt-2 text-sm font-medium text-blue-500 hover:underline"
+                  >
+                    {expanded ? 'Свернуть' : 'Показать полностью'}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -1188,7 +1515,7 @@ const PostCard: React.FC<{
         )}
 
         {/* действия */}
-        <div className="flex items-center gap-4 pt-3 border-t border-slate-200/50">
+        <div className="flex items-center gap-4 pt-3 border-t border-slate-200/50 dark:border-slate-600/50">
           <button
             onClick={onToggleLike}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition ${
@@ -1216,7 +1543,7 @@ const PostCard: React.FC<{
         <AnimatePresence>
           {commentsOpen && (
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-              <div className="mt-4 pt-4 border-t border-slate-200/50 space-y-3">
+              <div className="mt-4 pt-4 border-t border-slate-200/50 dark:border-slate-600/50 space-y-3">
                 {comments.filter(c => !c.parent_id).map((c) => (
                   <div key={c.id}>
                     <CommentBubble
@@ -1283,7 +1610,7 @@ const PostCard: React.FC<{
                   </div>
                 ))}
 
-                <div className="flex gap-3 pt-2 border-t border-slate-200/50">
+                <div className="flex gap-3 pt-2 border-t border-slate-200/50 dark:border-slate-600/50">
                   <div className="h-8 w-8 rounded-full overflow-hidden bg-slate-200 flex-shrink-0">
                     <div className="w-full h-full grid place-items-center text-xs">👤</div>
                   </div>
